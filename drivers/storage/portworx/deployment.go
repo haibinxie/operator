@@ -121,16 +121,18 @@ type template struct {
 	kvdb            map[string]string
 	cloudConfig     *cloudstorage.Config
 	osImage         string
+	k8sClient       client.Client
 }
 
 func newTemplate(
+	k8sClient client.Client,
 	cluster *corev1.StorageCluster,
 	nodeName string) (*template, error) {
 	if cluster == nil {
 		return nil, fmt.Errorf("storage cluster cannot be empty")
 	}
 
-	t := &template{cluster: cluster, nodeName: nodeName}
+	t := &template{k8sClient : k8sClient, cluster: cluster, nodeName: nodeName}
 
 	var err error
 	var ext string
@@ -223,12 +225,16 @@ func (p *portworx) getNodeByName(nodeName string) (*v1.Node, error) {
 func (p *portworx) GetKVDBPodSpec(
 	cluster *corev1.StorageCluster, nodeName string,
 ) (v1.PodSpec, error) {
-	t, err := newTemplate(cluster, nodeName)
+	t, err := newTemplate(p.k8sClient, cluster, nodeName)
 	if err != nil {
 		return v1.PodSpec{}, err
 	}
 
-	containers := t.kvdbContainer()
+	containers, err := t.kvdbContainer()
+	if err != nil {
+		return v1.PodSpec{}, err
+	}
+
 	podSpec := v1.PodSpec{
 		HostNetwork:        true,
 		RestartPolicy:      v1.RestartPolicyAlways,
@@ -261,7 +267,7 @@ func (p *portworx) GetKVDBPodSpec(
 func (p *portworx) GetStoragePodSpec(
 	cluster *corev1.StorageCluster, nodeName string,
 ) (v1.PodSpec, error) {
-	t, err := newTemplate(cluster, nodeName)
+	t, err := newTemplate(p.k8sClient, cluster, nodeName)
 	if err != nil {
 		return v1.PodSpec{}, err
 	}
@@ -296,7 +302,11 @@ func (p *portworx) GetStoragePodSpec(
 		t.cloudConfig = cloudConfig
 	}
 
-	containers := t.portworxContainer()
+	containers, err := t.portworxContainer()
+	if err != nil {
+		return v1.PodSpec{}, err
+	}
+
 	podSpec := v1.PodSpec{
 		HostNetwork:        true,
 		RestartPolicy:      v1.RestartPolicyAlways,
@@ -306,14 +316,22 @@ func (p *portworx) GetStoragePodSpec(
 	}
 
 	if pxutil.IsCSIEnabled(t.cluster) {
-		csiRegistrar := t.csiRegistrarContainer()
+		csiRegistrar, err := t.csiRegistrarContainer()
+		if err != nil {
+			return v1.PodSpec{}, err
+		}
 		if csiRegistrar != nil {
 			podSpec.Containers = append(podSpec.Containers, *csiRegistrar)
 		}
 	}
 
 	if pxutil.IsTelemetryEnabled(cluster.Spec) {
-		telemetryContainer := t.telemetryContainer()
+		telemetryContainer, err := t.telemetryContainer()
+
+		if err != nil {
+			return v1.PodSpec{}, err
+		}
+
 		if telemetryContainer != nil {
 			if len(telemetryContainer.Image) == 0 {
 				msg := fmt.Sprintf("telemetry image is required in the spec." +
@@ -425,9 +443,12 @@ func configureStorageNodeSpec(node *corev1.StorageNode, config *cloudstorage.Con
 	}
 }
 
-func (t *template) portworxContainer() v1.Container {
-	pxImage := util.GetImageURN(t.cluster.Spec.CustomImageRegistry, t.cluster.Spec.Image)
-	return v1.Container{
+func (t *template) portworxContainer() (v1.Container, error) {
+	pxImage, err := util.GetImageURN(t.k8sClient, t.cluster, t.cluster.Spec.Image)
+	if err != nil {
+		return v1.Container{}, err
+	}
+	container := v1.Container{
 		Name:            pxContainerName,
 		Image:           pxImage,
 		ImagePullPolicy: t.imagePullPolicy,
@@ -460,15 +481,20 @@ func (t *template) portworxContainer() v1.Container {
 		},
 		VolumeMounts: t.getVolumeMounts(),
 	}
+
+	return container, nil
 }
 
-func (t *template) kvdbContainer() v1.Container {
-	kvdbProxyImage := util.GetImageURN(t.cluster.Spec.CustomImageRegistry, pxutil.ImageNamePause)
+func (t *template) kvdbContainer() (v1.Container, error) {
+	kvdbProxyImage, err := util.GetImageURN(t.k8sClient, t.cluster, pxutil.ImageNamePause)
+	if err != nil {
+		return v1.Container{}, err
+	}
 	kvdbTargetPort := 9019
 	if t.startPort != pxutil.DefaultStartPort {
 		kvdbTargetPort = t.startPort + 15
 	}
-	return v1.Container{
+	container := v1.Container{
 		Name:            pxKVDBContainerName,
 		Image:           kvdbProxyImage,
 		ImagePullPolicy: t.imagePullPolicy,
@@ -492,9 +518,11 @@ func (t *template) kvdbContainer() v1.Container {
 			},
 		},
 	}
+
+	return container, nil
 }
 
-func (t *template) csiRegistrarContainer() *v1.Container {
+func (t *template) csiRegistrarContainer() (*v1.Container, error) {
 	container := v1.Container{
 		ImagePullPolicy: t.imagePullPolicy,
 		Env: []v1.EnvVar{
@@ -526,12 +554,13 @@ func (t *template) csiRegistrarContainer() *v1.Container {
 		},
 	}
 
+	var err error
 	if t.cluster.Status.DesiredImages.CSINodeDriverRegistrar != "" {
 		container.Name = "csi-node-driver-registrar"
-		container.Image = util.GetImageURN(
-			t.cluster.Spec.CustomImageRegistry,
-			t.cluster.Status.DesiredImages.CSINodeDriverRegistrar,
-		)
+		container.Image, err = util.GetImageURN(t.k8sClient, t.cluster, t.cluster.Status.DesiredImages.CSINodeDriverRegistrar)
+		if err != nil {
+			return nil, err
+		}
 		container.Args = []string{
 			"--v=5",
 			"--csi-address=$(ADDRESS)",
@@ -539,10 +568,10 @@ func (t *template) csiRegistrarContainer() *v1.Container {
 		}
 	} else if t.cluster.Status.DesiredImages.CSIDriverRegistrar != "" {
 		container.Name = "csi-driver-registrar"
-		container.Image = util.GetImageURN(
-			t.cluster.Spec.CustomImageRegistry,
-			t.cluster.Status.DesiredImages.CSIDriverRegistrar,
-		)
+		container.Image, err = util.GetImageURN(t.k8sClient, t.cluster, t.cluster.Status.DesiredImages.CSIDriverRegistrar)
+		if err != nil {
+			return nil, err
+		}
 		container.Args = []string{
 			"--v=5",
 			"--csi-address=$(ADDRESS)",
@@ -552,18 +581,20 @@ func (t *template) csiRegistrarContainer() *v1.Container {
 	}
 
 	if container.Name == "" {
-		return nil
+		return nil, nil
 	}
-	return &container
+	return &container, nil
 }
 
-func (t *template) telemetryContainer() *v1.Container {
+func (t *template) telemetryContainer() (*v1.Container, error) {
+	imageURN, err := util.GetImageURN(t.k8sClient, t.cluster, t.getDesiredTelemetryImage(t.cluster))
+	if err != nil {
+		return nil, err
+	}
+
 	container := v1.Container{
 		Name: "telemetry",
-		Image: util.GetImageURN(
-			t.cluster.Spec.CustomImageRegistry,
-			t.getDesiredTelemetryImage(t.cluster),
-		),
+		Image: imageURN,
 		ImagePullPolicy: t.imagePullPolicy,
 		Env: []v1.EnvVar{
 			{
@@ -604,7 +635,7 @@ func (t *template) telemetryContainer() *v1.Container {
 			fmt.Sprintf("-Dstandalone.controller_sn=%s", t.nodeName),
 		}
 	}
-	return &container
+	return &container, nil
 }
 
 func (t *template) getSelectorRequirements() []v1.NodeSelectorRequirement {

@@ -402,27 +402,28 @@ func (c *csi) createDeployment(
 		resizerImage             string
 	)
 
-	provisionerImage = util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		cluster.Status.DesiredImages.CSIProvisioner,
-	)
+	provisionerImage, err = util.GetImageURN(c.k8sClient, cluster, cluster.Status.DesiredImages.CSIProvisioner)
+	if err != nil {
+		return err
+	}
+
 	if csiConfig.IncludeAttacher && cluster.Status.DesiredImages.CSIAttacher != "" {
-		attacherImage = util.GetImageURN(
-			cluster.Spec.CustomImageRegistry,
-			cluster.Status.DesiredImages.CSIAttacher,
-		)
+		attacherImage, err = util.GetImageURN(c.k8sClient, cluster,cluster.Status.DesiredImages.CSIAttacher)
+		if err != nil {
+			return err
+		}
 	}
 	if csiConfig.IncludeSnapshotter && cluster.Status.DesiredImages.CSISnapshotter != "" {
-		snapshotterImage = util.GetImageURN(
-			cluster.Spec.CustomImageRegistry,
-			cluster.Status.DesiredImages.CSISnapshotter,
-		)
+		snapshotterImage, err = util.GetImageURN(c.k8sClient, cluster, cluster.Status.DesiredImages.CSISnapshotter)
+		if err != nil {
+			return err
+		}
 	}
 	if csiConfig.IncludeResizer && cluster.Status.DesiredImages.CSIResizer != "" {
-		resizerImage = util.GetImageURN(
-			cluster.Spec.CustomImageRegistry,
-			cluster.Status.DesiredImages.CSIResizer,
-		)
+		resizerImage, err = util.GetImageURN(c.k8sClient, cluster, cluster.Status.DesiredImages.CSIResizer)
+		if err != nil {
+			return err
+		}
 	}
 
 	modified := provisionerImage != existingProvisionerImage ||
@@ -694,14 +695,15 @@ func (c *csi) createStatefulSet(
 		attacherImage            string
 	)
 
-	provisionerImage = util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		cluster.Status.DesiredImages.CSIProvisioner,
-	)
-	attacherImage = util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		cluster.Status.DesiredImages.CSIAttacher,
-	)
+	provisionerImage, err = util.GetImageURN(c.k8sClient, cluster, cluster.Status.DesiredImages.CSIProvisioner)
+	if err != nil {
+		return err
+	}
+
+	attacherImage, err = util.GetImageURN(c.k8sClient, cluster, cluster.Status.DesiredImages.CSIAttacher)
+	if err != nil {
+		return err
+	}
 
 	modified := provisionerImage != existingProvisionerImage ||
 		attacherImage != existingAttacherImage ||

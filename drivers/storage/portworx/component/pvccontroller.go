@@ -274,11 +274,10 @@ func (c *pvcController) createDeployment(
 	if k8sutil.IsNewKubernetesRegistry(&c.k8sVersion) {
 		kubeControllerImage = "k8s.gcr.io/kube-controller-manager-amd64"
 	}
-	imageName := util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		kubeControllerImage+":v"+c.k8sVersion.String(),
-	)
-
+	imageName, err := util.GetImageURN(c.k8sClient, cluster, kubeControllerImage+":v"+c.k8sVersion.String())
+	if err != nil {
+		return err
+	}
 	command := []string{
 		"kube-controller-manager",
 		"--leader-elect=true",

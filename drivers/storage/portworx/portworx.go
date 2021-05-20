@@ -178,7 +178,7 @@ func (p *portworx) SetDefaultsOnStorageCluster(toUpdate *corev1.StorageCluster) 
 			}
 		}
 
-		setPortworxDefaults(toUpdate)
+		setPortworxDefaults(p.k8sClient, toUpdate)
 	}
 
 	removeDeprecatedFields(toUpdate)
@@ -520,8 +520,8 @@ func (p *portworx) storageNodeToCloudSpec(storageNodes []*corev1.StorageNode, cl
 	return nil
 }
 
-func setPortworxDefaults(toUpdate *corev1.StorageCluster) {
-	t, err := newTemplate(toUpdate, "")
+func setPortworxDefaults(k8sClient client.Client, toUpdate *corev1.StorageCluster) {
+	t, err := newTemplate(k8sClient, toUpdate, "")
 	if err != nil {
 		return
 	}

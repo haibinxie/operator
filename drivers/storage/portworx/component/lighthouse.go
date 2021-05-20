@@ -328,10 +328,20 @@ func (c *lighthouse) createDeployment(
 		}
 	}
 
-	imageRegistry := cluster.Spec.CustomImageRegistry
-	lhImage = util.GetImageURN(imageRegistry, lhImage)
-	configSyncImage = util.GetImageURN(imageRegistry, configSyncImage)
-	storkConnectorImage = util.GetImageURN(imageRegistry, storkConnectorImage)
+	lhImage, err = util.GetImageURN(c.k8sClient, cluster, lhImage)
+	if err != nil {
+		return err
+	}
+
+	configSyncImage, err = util.GetImageURN(c.k8sClient, cluster, configSyncImage)
+	if err != nil {
+		return err
+	}
+
+	storkConnectorImage, err = util.GetImageURN(c.k8sClient, cluster, storkConnectorImage)
+	if err != nil {
+		return err
+	}
 
 	modified := lhImage != existingLhImage ||
 		configSyncImage != existingConfigInitImage ||

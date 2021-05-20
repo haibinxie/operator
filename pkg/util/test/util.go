@@ -686,8 +686,11 @@ func validateComponents(pxImageList map[string]string, cluster *corev1.StorageCl
 			storkImageName = cluster.Spec.Stork.Image
 		}
 
-		storkImage := util.GetImageURN(cluster.Spec.CustomImageRegistry, storkImageName)
-		err := validateImageOnPods(storkImage, cluster.Namespace, map[string]string{"name": "stork"})
+		storkImage, err := util.GetImageURN(nil, cluster, storkImageName)
+		if err != nil {
+			return err
+		}
+		err = validateImageOnPods(storkImage, cluster.Namespace, map[string]string{"name": "stork"})
 		if err != nil {
 			return err
 		}
@@ -723,7 +726,10 @@ func validateComponents(pxImageList map[string]string, cluster *corev1.StorageCl
 			autopilotImageName = cluster.Spec.Autopilot.Image
 		}
 
-		autopilotImage := util.GetImageURN(cluster.Spec.CustomImageRegistry, autopilotImageName)
+		autopilotImage, err := util.GetImageURN(nil, cluster, autopilotImageName)
+		if err != nil {
+			return err
+		}
 		if err = validateImageOnPods(autopilotImage, cluster.Namespace, map[string]string{"name": "autopilot"}); err != nil {
 			return err
 		}
@@ -748,7 +754,10 @@ func validateComponents(pxImageList map[string]string, cluster *corev1.StorageCl
 			lighthouseImageName = cluster.Spec.UserInterface.Image
 		}
 
-		lhImage := util.GetImageURN(cluster.Spec.CustomImageRegistry, lighthouseImageName)
+		lhImage, err := util.GetImageURN(nil, cluster, lighthouseImageName)
+		if err != nil {
+			return err
+		}
 		if err = validateImageOnPods(lhImage, cluster.Namespace, map[string]string{"name": "lighthouse"}); err != nil {
 			return err
 		}

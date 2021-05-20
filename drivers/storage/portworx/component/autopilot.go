@@ -307,7 +307,9 @@ func (c *autopilot) createDeployment(
 	sort.Strings(argList)
 	command := append([]string{"/autopilot"}, argList...)
 
-	imageName = util.GetImageURN(cluster.Spec.CustomImageRegistry, imageName)
+	if imageName, err = util.GetImageURN(c.k8sClient, cluster, imageName); err != nil {
+		return err
+	}
 
 	envMap := make(map[string]*v1.EnvVar)
 	envMap[pxutil.EnvKeyPortworxNamespace] = &v1.EnvVar{

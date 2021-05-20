@@ -180,7 +180,10 @@ func (u *uninstallPortworx) RunNodeWiper(
 		release := manifest.Instance().GetVersions(u.cluster, true)
 		wiperImage = release.Components.NodeWiper
 	}
-	wiperImage = util.GetImageURN(u.cluster.Spec.CustomImageRegistry, wiperImage)
+	wiperImage, err = util.GetImageURN(u.k8sClient, u.cluster, wiperImage)
+	if err != nil {
+		return err
+	}
 
 	args := []string{"-w"}
 	if removeData {

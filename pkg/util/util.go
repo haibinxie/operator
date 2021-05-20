@@ -1,13 +1,22 @@
 package util
 
 import (
+	"context"
+	"github.com/sirupsen/logrus"
+	v1 "k8s.io/api/core/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	credentialprovidersecrets "k8s.io/kubernetes/pkg/credentialprovider/secrets"
+	"k8s.io/kubernetes/pkg/util/parsers"
 	"path"
 	"reflect"
 	"strings"
 
+	dockerClient "github.com/docker/docker/client"
 	"github.com/hashicorp/go-version"
 	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
-	v1 "k8s.io/api/core/v1"
+	//"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Reasons for controller events
@@ -27,18 +36,146 @@ const (
 )
 
 var (
-	// commonDockerRegistries is a map of commonly used Docker registries
-	commonDockerRegistries = map[string]bool{
+	// legacyDockerRegistries is a map of commonly used Docker registries.
+	// Deprecated: Do NOT make changes. This is for backward compatability purpose.
+	legacyDockerRegistries = map[string]bool{
 		"docker.io":                   true,
 		"quay.io":                     true,
 		"index.docker.io":             true,
 		"registry-1.docker.io":        true,
 		"registry.connect.redhat.com": true,
 	}
+
+	// commonDockerRegistries is a map of commonly used docker registries.
+	commonDockerRegistries = map[string]bool {
+		"docker.io":                   true,
+		"quay.io":                     true,
+		"index.docker.io":             true,
+		"registry-1.docker.io":        true,
+		"registry.connect.redhat.com": true,
+		"gcr.io":                      true,
+		"k8s.gcr.io":                  true,
+	}
 )
 
-// GetImageURN returns the complete image name based on the registry and repo
-func GetImageURN(registryAndRepo, image string) string {
+// GetImageURN will check image URN with new parser and old parser:
+//   - If both parsers return same image URN, return it without checking if image exists in the repo.
+//   - If image with new parser exists in repo, return it.
+//   - If image with new parser does not exist and image with legacy parser exist, use legacy one.
+//   - If both do not exist, use image with new parser.
+func GetImageURN(k8sClient client.Client, cluster *corev1.StorageCluster, image string) (string, error) {
+	var secretName string
+	if cluster.Spec.ImagePullSecret != nil {
+		secretName = *cluster.Spec.ImagePullSecret
+	}
+	logger := logrus.WithFields(logrus.Fields{
+		"SecretName":      secretName,
+		"SecretNamespace": cluster.Namespace,
+		"RegistryAndRepo":        cluster.Spec.CustomImageRegistry,
+		"Image": image,
+		"PullPolicy": cluster.Spec.ImagePullPolicy,
+	})
+
+	imageURN := getImageURN(cluster.Spec.CustomImageRegistry, image, commonDockerRegistries)
+	legacyImageURN := getImageURN(cluster.Spec.CustomImageRegistry, image, legacyDockerRegistries)
+
+	if imageURN == legacyImageURN {
+		return imageURN, nil
+	}
+
+	exists, err := imageExists(k8sClient, secretName, cluster.Namespace, imageURN, cluster.Spec.ImagePullPolicy)
+	if err != nil {
+		logger.WithError(err).WithField("ImageURN", imageURN).Error("")
+		return "", err
+	}
+
+	if exists {
+		return imageURN, nil
+	}
+
+	logger.WithField("ImageURN", imageURN).Debug("image does not exist, try parsing without common registries")
+
+
+	exists, err = imageExists(k8sClient, secretName, cluster.Namespace, legacyImageURN, cluster.Spec.ImagePullPolicy)
+	if err != nil {
+		logger.WithError(err).WithField("ImageURNWithOldParser", legacyImageURN).Error("")
+		return "", err
+	}
+
+	if exists {
+		return legacyImageURN, nil
+	}
+
+	return imageURN, nil
+}
+
+func imageExists(k8sClient client.Client, secretName, secretNamespace, imageURN string, pullPolicy v1.PullPolicy) (bool, error) {
+	if pullPolicy == v1.PullNever {
+		return true, nil
+	}
+
+	var errors []error
+	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv)
+	if err != nil {
+		return false, err
+	}
+
+	var repoToPull string
+	repoToPull, _, _, err = parsers.ParseImageName(imageURN)
+	if err != nil {
+		return false, err
+	}
+
+	hasCredential := false
+	if len(secretName) > 0 {
+		secret := v1.Secret{}
+		err = k8sClient.Get(
+			context.TODO(),
+			types.NamespacedName{
+				Name:      secretName,
+				Namespace: secretNamespace,
+			},
+			&secret)
+		if err != nil {
+			return false, err
+		}
+
+		secrets := []v1.Secret{secret}
+		keyring, err := credentialprovidersecrets.MakeDockerKeyring(secrets, nil)
+		if err != nil {
+			return false, err
+		}
+
+		creds, _ := keyring.Lookup(repoToPull)
+
+		for _, cred := range creds {
+			hasCredential = true
+			_, err = cli.DistributionInspect(context.TODO(), imageURN, cred.Auth)
+			if err == nil {
+				return true, nil
+			}
+
+			errors = append(errors, err)
+		}
+	}
+
+	if !hasCredential {
+		_, err = cli.DistributionInspect(context.TODO(), imageURN, "")
+		if err == nil {
+			return true, nil
+		}
+
+		errors = append(errors, err)
+	}
+
+	//err = utilerrors.NewAggregate(errors)
+	//logrus.WithField("hasCredential", hasCredential).WithError(err).Debug("result of check image exists")
+
+	return false, utilerrors.NewAggregate(errors)
+}
+
+// getImageURN returns the complete image name based on the registry and repo
+func getImageURN(registryAndRepo, image string, commonRegistries map[string]bool) string {
 	if image == "" {
 		return ""
 	}
@@ -57,7 +194,7 @@ func GetImageURN(registryAndRepo, image string) string {
 	imgParts := strings.Split(image, "/")
 	if len(imgParts) > 1 {
 		// advance imgParts to swallow the common registry
-		if _, present := commonDockerRegistries[imgParts[0]]; present {
+		if _, present := commonRegistries[imgParts[0]]; present {
 			imgParts = imgParts[1:]
 		}
 	}

@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/docker/docker v20.10.6+incompatible
 	github.com/go-logr/logr v0.3.0
 	github.com/golang/mock v1.5.0
 	github.com/google/shlex v0.0.0-20181106134648-c34317bd91bf

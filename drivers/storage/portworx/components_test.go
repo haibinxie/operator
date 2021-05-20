@@ -3405,7 +3405,7 @@ func validateAuthSecurityInstall(t *testing.T, cluster *corev1.StorageCluster) {
 	require.NoError(t, err)
 
 	// Initial run
-	setPortworxDefaults(cluster)
+	setPortworxDefaults(driver.k8sClient, cluster)
 
 	err = driver.PreInstall(cluster)
 	require.NoError(t, err)
@@ -3773,7 +3773,7 @@ func validateSecurityTokenRefreshOnUpdate(t *testing.T, cluster *corev1.StorageC
 	require.NoError(t, err)
 
 	// Initial run
-	setPortworxDefaults(cluster)
+	setPortworxDefaults(driver.k8sClient, cluster)
 
 	// token should be refreshed if the issuer changes
 	err = driver.PreInstall(cluster) // regenerate token with long lifetime

@@ -389,10 +389,10 @@ func (c *prometheus) createOperatorDeployment(
 		existingImageName = existingDeployment.Spec.Template.Spec.Containers[0].Image
 	}
 
-	imageName := util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		cluster.Status.DesiredImages.PrometheusOperator,
-	)
+	imageName, err := util.GetImageURN(c.k8sClient, cluster, cluster.Status.DesiredImages.PrometheusOperator)
+	if err != nil {
+		return err
+	}
 
 	modified := existingImageName != imageName ||
 		util.HasPullSecretChanged(cluster, existingDeployment.Spec.Template.Spec.ImagePullSecrets) ||
@@ -400,7 +400,11 @@ func (c *prometheus) createOperatorDeployment(
 		util.HaveTolerationsChanged(cluster, existingDeployment.Spec.Template.Spec.Tolerations)
 
 	if !c.isOperatorCreated || errors.IsNotFound(getErr) || modified {
-		deployment := getPrometheusOperatorDeploymentSpec(cluster, ownerRef, imageName)
+		deployment, err := getPrometheusOperatorDeploymentSpec(c.k8sClient, cluster, ownerRef, imageName)
+		if err != nil {
+			return err
+		}
+
 		if err := k8sutil.CreateOrUpdateDeployment(c.k8sClient, deployment, ownerRef); err != nil {
 			return err
 		}
@@ -410,24 +414,27 @@ func (c *prometheus) createOperatorDeployment(
 }
 
 func getPrometheusOperatorDeploymentSpec(
+	k8sClient client.Client,
 	cluster *corev1.StorageCluster,
 	ownerRef *metav1.OwnerReference,
 	operatorImage string,
-) *appsv1.Deployment {
+) (*appsv1.Deployment, error) {
 	replicas := int32(1)
 	runAsNonRoot := true
 	runAsUser := int64(65534)
 	labels := map[string]string{
 		"k8s-app": PrometheusOperatorDeploymentName,
 	}
-	configReloaderImageName := util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		cluster.Status.DesiredImages.PrometheusConfigMapReload,
-	)
-	prometheusConfigReloaderImageName := util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		cluster.Status.DesiredImages.PrometheusConfigReloader,
-	)
+	configReloaderImageName, err := util.GetImageURN(k8sClient, cluster, cluster.Status.DesiredImages.PrometheusConfigMapReload)
+	if err != nil {
+		return nil, err
+	}
+	var prometheusConfigReloaderImageName string
+	prometheusConfigReloaderImageName, err = util.GetImageURN(k8sClient, cluster, cluster.Status.DesiredImages.PrometheusConfigReloader)
+	if err != nil {
+		return nil, err
+	}
+
 	args := make([]string, 0)
 	args = append(args,
 		fmt.Sprintf("-namespaces=%s", cluster.Namespace),
@@ -504,7 +511,7 @@ func getPrometheusOperatorDeploymentSpec(
 		}
 	}
 
-	return deployment
+	return deployment, nil
 }
 
 func (c *prometheus) createPrometheusService(
@@ -539,10 +546,10 @@ func (c *prometheus) createPrometheusInstance(
 	ownerRef *metav1.OwnerReference,
 ) error {
 	replicas := int32(1)
-	prometheusImageName := util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		cluster.Status.DesiredImages.Prometheus,
-	)
+	prometheusImageName, err := util.GetImageURN(c.k8sClient, cluster, cluster.Status.DesiredImages.Prometheus)
+	if err != nil {
+		return err
+	}
 
 	prometheusInst := &monitoringv1.Prometheus{
 		ObjectMeta: metav1.ObjectMeta{

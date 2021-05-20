@@ -515,7 +515,11 @@ func (c *Controller) createStorkDeployment(
 	sort.Strings(argList)
 	command := append([]string{"/stork"}, argList...)
 
-	imageName = util.GetImageURN(cluster.Spec.CustomImageRegistry, imageName)
+	imageName, err = util.GetImageURN(c.client, cluster, imageName)
+	if err != nil {
+		return err
+	}
+
 	hostNetwork := cluster.Spec.Stork.HostNetwork != nil && *cluster.Spec.Stork.HostNetwork
 
 	envMap := c.Driver.GetStorkEnvMap(cluster)
@@ -730,10 +734,10 @@ func (c *Controller) createStorkSchedDeployment(
 	if k8sutil.IsNewKubernetesRegistry(c.kubernetesVersion) {
 		kubeSchedImage = "k8s.gcr.io/kube-scheduler-amd64"
 	}
-	imageName := util.GetImageURN(
-		cluster.Spec.CustomImageRegistry,
-		kubeSchedImage+":v"+c.kubernetesVersion.String(),
-	)
+	imageName, err := util.GetImageURN(c.client, cluster, kubeSchedImage+":v"+c.kubernetesVersion.String())
+	if err != nil{
+		return err
+	}
 
 	command := []string{
 		"/usr/local/bin/kube-scheduler",

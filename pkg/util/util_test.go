@@ -10,71 +10,71 @@ import (
 
 func TestGetImageURN(t *testing.T) {
 	// TestCase: Empty image
-	out := GetImageURN("registry.io", "")
+	out := getImageURN("registry.io", "", commonDockerRegistries)
 	require.Equal(t, "", out)
 
 	// TestCase: Empty repo and registry
-	out = GetImageURN("", "test/image")
+	out = getImageURN("", "test/image", commonDockerRegistries)
 	require.Equal(t, "test/image", out)
 
 	// TestCase: Registry without repo but image with repo
-	out = GetImageURN("registry.io", "test/image")
+	out = getImageURN("registry.io", "test/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/test/image", out)
 
-	out = GetImageURN("registry.io/", "test/image")
+	out = getImageURN("registry.io/", "test/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/test/image", out)
 
-	out = GetImageURN("registry.io", "test/this/image")
+	out = getImageURN("registry.io", "test/this/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/test/this/image", out)
 
 	// TestCase: Registry and image without repo
-	out = GetImageURN("registry.io", "image")
+	out = getImageURN("registry.io", "image", commonDockerRegistries)
 	require.Equal(t, "registry.io/image", out)
 
 	// TestCase: Image with common docker registries
-	out = GetImageURN("registry.io", "docker.io/test/image")
+	out = getImageURN("registry.io", "docker.io/test/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/test/image", out)
 
-	out = GetImageURN("registry.io", "quay.io/test/this/image")
+	out = getImageURN("registry.io", "quay.io/test/this/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/test/this/image", out)
 
-	out = GetImageURN("registry.io/", "index.docker.io/test/this/image")
+	out = getImageURN("registry.io/", "index.docker.io/test/this/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/test/this/image", out)
 
-	out = GetImageURN("registry.io", "registry-1.docker.io/image")
+	out = getImageURN("registry.io", "registry-1.docker.io/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/image", out)
 
-	out = GetImageURN("registry.io/", "registry.connect.redhat.com/image")
+	out = getImageURN("registry.io/", "registry.connect.redhat.com/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/image", out)
 
 	// TestCase: Regsitry and image both with repo
-	out = GetImageURN("registry.io/repo", "test/image")
+	out = getImageURN("registry.io/repo", "test/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/repo/image", out)
 
-	out = GetImageURN("registry.io/repo", "test/this/image")
+	out = getImageURN("registry.io/repo", "test/this/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/repo/image", out)
 
-	out = GetImageURN("registry.io/repo/", "test/image")
+	out = getImageURN("registry.io/repo/", "test/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/repo/image", out)
 
-	out = GetImageURN("registry.io/repo//", "test/this/image")
+	out = getImageURN("registry.io/repo//", "test/this/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/repo/image", out)
 
 	// TestCase: Regsitry with repo but image without repo
-	out = GetImageURN("registry.io/repo", "image")
+	out = getImageURN("registry.io/repo", "image", commonDockerRegistries)
 	require.Equal(t, "registry.io/repo/image", out)
 
-	out = GetImageURN("registry.io/repo/subdir", "image")
+	out = getImageURN("registry.io/repo/subdir", "image", commonDockerRegistries)
 	require.Equal(t, "registry.io/repo/subdir/image", out)
 
 	// TestCase: Registry with empty root repo
-	out = GetImageURN("registry.io//", "image")
+	out = getImageURN("registry.io//", "image", commonDockerRegistries)
 	require.Equal(t, "registry.io/image", out)
 
-	out = GetImageURN("registry.io//", "test/image")
+	out = getImageURN("registry.io//", "test/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/image", out)
 
-	out = GetImageURN("registry.io//", "test/this/image")
+	out = getImageURN("registry.io//", "test/this/image", commonDockerRegistries)
 	require.Equal(t, "registry.io/image", out)
 }
 
