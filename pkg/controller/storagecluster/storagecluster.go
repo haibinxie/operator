@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
 	"reflect"
 	"sort"
 	"strconv"
@@ -516,6 +517,21 @@ func (c *Controller) deleteStorageCluster(
 	return nil
 }
 
+// For IBM cluster, all nodes are labeled as master and worker, in this special case we should
+// allow the pod to run on master.
+func (c *Controller) runOnMaster(nodes []v1.Node) bool {
+	for _, node := range nodes {
+		_, isWorker := node.Labels["node-role.kubernetes.io/worker"]
+		_, isMaster := node.Labels["node-role.kubernetes.io/master"]
+
+		if !isMaster || !isWorker {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (c *Controller) updateStorageClusterStatus(
 	cluster *corev1.StorageCluster,
 ) error {
@@ -898,7 +914,16 @@ func (c *Controller) nodeShouldRunStoragePod(
 		return false, true, nil
 	}
 
-	newPod, err := c.newSimulationPod(cluster, node.Name)
+	var template v1.PodTemplateSpec
+	template, err = c.createPodTemplate(cluster, node, "")
+	if err != nil {
+		return false, false, err
+	}
+
+	var newPod *v1.Pod
+	newPod, err = k8scontroller.GetPodFromTemplate(&template, cluster, nil)
+
+	//newPod, err := c.newSimulationPod(cluster, node.Name)
 	if err != nil {
 		logrus.Debugf("Failed to create a pod spec for node %v: %v", node.Name, err)
 		return false, false, err
@@ -1042,6 +1067,17 @@ func (c *Controller) setStorageClusterDefaults(cluster *corev1.StorageCluster) e
 	}
 	if !foundDeleteFinalizer {
 		toUpdate.Finalizers = append(toUpdate.Finalizers, deleteFinalizerName)
+	}
+
+	nodeList := &v1.NodeList{}
+	err := c.client.List(context.TODO(), nodeList, &client.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("couldn't get list of nodes when syncing storage cluster %#v: %v",
+			cluster, err)
+	}
+
+	if c.runOnMaster(nodeList.Items) {
+		toUpdate.Annotations[pxutil.AnnotationRunOnMaster] = "true"
 	}
 
 	c.Driver.SetDefaultsOnStorageCluster(toUpdate)
