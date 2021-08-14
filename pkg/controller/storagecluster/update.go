@@ -48,6 +48,7 @@ import (
 // rollingUpdate deletes old storage cluster pods making sure that no more than
 // cluster.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable pods are unavailable
 func (c *Controller) rollingUpdate(cluster *corev1.StorageCluster, hash string) error {
+	logrus.Debug("Perform rolling update")
 	nodeToStoragePods, err := c.getNodeToStoragePods(cluster)
 	if err != nil {
 		return fmt.Errorf("couldn't get node to storage pod mapping for storage cluster %v: %v",
@@ -396,6 +397,10 @@ func (c *Controller) getUnavailableNumbers(
 	var numUnavailable, desiredNumberScheduled int
 	for _, node := range nodeList.Items {
 		wantToRun, _, err := c.nodeShouldRunStoragePod(&node, cluster)
+		logrus.WithFields(logrus.Fields{
+			"node":      node.Name,
+			"wantToRun": wantToRun,
+		}).WithError(err).Debug("check node should run storage pod")
 		if err != nil {
 			return -1, -1, err
 		}
