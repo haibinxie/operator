@@ -818,6 +818,11 @@ func (c *Controller) podsShouldBeOnNode(
 	cluster *corev1.StorageCluster,
 ) (nodesNeedingStoragePods, podsToDelete []string, err error) {
 	shouldRun, shouldContinueRunning, err := c.nodeShouldRunStoragePod(node, cluster)
+	logrus.WithFields(logrus.Fields{
+		"node":                  node.Name,
+		"shouldRun":             shouldRun,
+		"shouldContinueRunning": shouldContinueRunning,
+	}).WithError(err).Debug("check node should run storage pod")
 	if err != nil {
 		return
 	}
@@ -826,7 +831,11 @@ func (c *Controller) podsShouldBeOnNode(
 
 	switch {
 	case shouldRun && !exists:
-		nodesNeedingStoragePods = append(nodesNeedingStoragePods, node.Name)
+		if k8s.IsPodRecentlyCreatedAfterNodeCordoned(node, c.lastPodCreationTime, cluster) {
+			logrus.Infof("node %s is recently created after node cordoned, will not recreate it", node.Name)
+		} else {
+			nodesNeedingStoragePods = append(nodesNeedingStoragePods, node.Name)
+		}
 	case shouldContinueRunning:
 		// If a storage pod failed, delete it.
 		// If there's no storage pod left on this node, we will create it in the next sync loop
@@ -892,10 +901,6 @@ func (c *Controller) nodeShouldRunStoragePod(
 		return false, true, nil
 	}
 
-	if k8s.IsPodRecentlyCreatedAfterNodeCordoned(node, c.lastPodCreationTime, cluster) {
-		return false, true, nil
-	}
-
 	newPod, err := c.newSimulationPod(cluster, node.Name)
 	if err != nil {
 		logrus.Debugf("Failed to create a pod spec for node %v: %v", node.Name, err)
@@ -905,6 +910,11 @@ func (c *Controller) nodeShouldRunStoragePod(
 	taints := node.Spec.Taints
 	fitsNodeName, fitsNodeAffinity, fitsTaints := checkPredicates(newPod, node, taints)
 	if !fitsNodeName || !fitsNodeAffinity {
+		logrus.WithFields(logrus.Fields{
+			"nodeName":         node.Name,
+			"fitsNodeName":     fitsNodeName,
+			"fitsNodeAffinity": fitsNodeAffinity,
+		}).Debug("pod does not fit")
 		return false, false, nil
 	}
 
@@ -913,6 +923,10 @@ func (c *Controller) nodeShouldRunStoragePod(
 		shouldContinueRunning := v1helper.TolerationsTolerateTaintsWithFilter(newPod.Spec.Tolerations, taints, func(t *v1.Taint) bool {
 			return t.Effect == v1.TaintEffectNoExecute
 		})
+		logrus.WithFields(logrus.Fields{
+			"nodeName":              node.Name,
+			"shouldContinueRunning": shouldContinueRunning,
+		}).Debug("pod does not fit taints")
 		return false, shouldContinueRunning, nil
 	}
 
