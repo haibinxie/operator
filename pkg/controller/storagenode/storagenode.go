@@ -9,6 +9,7 @@ import (
 	"github.com/libopenstorage/operator/drivers/storage"
 	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 	"github.com/libopenstorage/operator/pkg/constants"
+	"github.com/libopenstorage/operator/pkg/controller/storagecluster"
 	"github.com/libopenstorage/operator/pkg/util"
 	"github.com/libopenstorage/operator/pkg/util/k8s"
 	apiextensionsops "github.com/portworx/sched-ops/k8s/apiextensions"
@@ -268,7 +269,7 @@ func (c *Controller) syncKVDB(
 		}
 
 		if !isBeingDeleted && !isRecentlyCreatedAfterNodeCordoned && len(kvdbPodList.Items) == 0 {
-			pod, err := c.createKVDBPod(cluster, storageNode)
+			pod, err := c.createKVDBPod(cluster, storageNode, node)
 			if err != nil {
 				return err
 			}
@@ -363,8 +364,10 @@ func (c *Controller) syncStorage(
 func (c *Controller) createKVDBPod(
 	cluster *corev1.StorageCluster,
 	storageNode *corev1.StorageNode,
+	node *v1.Node,
 ) (*v1.Pod, error) {
-	podSpec, err := c.Driver.GetKVDBPodSpec(cluster, storageNode.Name)
+	clusterCopy := storagecluster.GetClusterCopyWithRunOnMaster(cluster, node)
+	podSpec, err := c.Driver.GetKVDBPodSpec(clusterCopy, storageNode.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kvdb pod template: %v", err)
 	}

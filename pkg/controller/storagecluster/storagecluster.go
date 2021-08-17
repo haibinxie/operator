@@ -517,21 +517,6 @@ func (c *Controller) deleteStorageCluster(
 	return nil
 }
 
-// For IBM cluster, all nodes are labeled as master and worker, in this special case we should
-// allow the pod to run on master.
-func (c *Controller) runOnMaster(nodes []v1.Node) bool {
-	for _, node := range nodes {
-		_, isWorker := node.Labels["node-role.kubernetes.io/worker"]
-		_, isMaster := node.Labels["node-role.kubernetes.io/master"]
-
-		if !isMaster || !isWorker {
-			return false
-		}
-	}
-
-	return true
-}
-
 func (c *Controller) updateStorageClusterStatus(
 	cluster *corev1.StorageCluster,
 ) error {
@@ -951,7 +936,9 @@ func (c *Controller) createPodTemplate(
 	node *v1.Node,
 	hash string,
 ) (v1.PodTemplateSpec, error) {
-	podSpec, err := c.Driver.GetStoragePodSpec(cluster, node.Name)
+	clusterCopy := GetClusterCopyWithRunOnMaster(cluster, node)
+	podSpec, err := c.Driver.GetStoragePodSpec(clusterCopy, node.Name)
+
 	if err != nil {
 		return v1.PodTemplateSpec{}, fmt.Errorf("failed to create pod template: %v", err)
 	}
@@ -984,39 +971,6 @@ func (c *Controller) createPodTemplate(
 		newTemplate.Labels[defaultStorageClusterUniqueLabelKey] = hash
 	}
 	return newTemplate, nil
-}
-
-func (c *Controller) newSimulationPod(
-	cluster *corev1.StorageCluster,
-	nodeName string,
-) (*v1.Pod, error) {
-	newPod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: cluster.Namespace,
-			Labels:    c.storageClusterSelectorLabels(cluster),
-		},
-		Spec: v1.PodSpec{
-			NodeName: nodeName,
-		},
-	}
-
-	if cluster.Spec.Placement != nil {
-		if cluster.Spec.Placement.NodeAffinity != nil {
-			newPod.Spec.Affinity = &v1.Affinity{
-				NodeAffinity: cluster.Spec.Placement.NodeAffinity.DeepCopy(),
-			}
-		}
-		if len(cluster.Spec.Placement.Tolerations) > 0 {
-			newPod.Spec.Tolerations = make([]v1.Toleration, 0)
-			for _, t := range cluster.Spec.Placement.Tolerations {
-				newPod.Spec.Tolerations = append(newPod.Spec.Tolerations, *(t.DeepCopy()))
-			}
-		}
-	}
-
-	// Add default tolerations for StorageCluster pods
-	k8s.AddOrUpdateStoragePodTolerations(&newPod.Spec)
-	return newPod, nil
 }
 
 // checkPredicates checks if a StorageCluster pod can run on a node
@@ -1067,17 +1021,6 @@ func (c *Controller) setStorageClusterDefaults(cluster *corev1.StorageCluster) e
 	}
 	if !foundDeleteFinalizer {
 		toUpdate.Finalizers = append(toUpdate.Finalizers, deleteFinalizerName)
-	}
-
-	nodeList := &v1.NodeList{}
-	err := c.client.List(context.TODO(), nodeList, &client.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("couldn't get list of nodes when syncing storage cluster %#v: %v",
-			cluster, err)
-	}
-
-	if c.runOnMaster(nodeList.Items) {
-		toUpdate.Annotations[pxutil.AnnotationRunOnMaster] = "true"
 	}
 
 	c.Driver.SetDefaultsOnStorageCluster(toUpdate)
@@ -1208,6 +1151,29 @@ func (c *Controller) log(clus *corev1.StorageCluster) *logrus.Entry {
 	}
 
 	return logrus.WithFields(logFields)
+}
+
+// GetClusterCopyWithRunOnMaster adds runOnMaster annotation to StorageCluster if a node is labelled as
+// both master and worker. This is needed for IBM OCP cluster where all nodes are labelled master and worker.
+func GetClusterCopyWithRunOnMaster(
+	cluster *corev1.StorageCluster,
+	node *v1.Node) *corev1.StorageCluster {
+	clusterCopy := *cluster
+
+	_, isWorker := node.Labels["node-role.kubernetes.io/worker"]
+	_, isMaster := node.Labels["node-role.kubernetes.io/master"]
+
+	// If a node is labelled as master and worker, we will let pod run on it.
+	if isWorker && isMaster {
+		clusterCopy.Annotations = map[string]string{}
+		clusterCopy.Annotations[pxutil.AnnotationRunOnMaster] = "true"
+
+		for k, v := range cluster.Annotations {
+			clusterCopy.Annotations[k] = v
+		}
+	}
+
+	return &clusterCopy
 }
 
 func storagePodsEnabled(
