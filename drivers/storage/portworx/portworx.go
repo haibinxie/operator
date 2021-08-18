@@ -569,17 +569,15 @@ func setPortworxDefaults(toUpdate *corev1.StorageCluster) {
 	if toUpdate.Spec.Placement == nil {
 		toUpdate.Spec.Placement = &corev1.PlacementSpec{}
 	}
+
 	if toUpdate.Spec.Placement.NodeAffinity == nil {
 		toUpdate.Spec.Placement.NodeAffinity = &v1.NodeAffinity{
 			RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
-				NodeSelectorTerms: []v1.NodeSelectorTerm{
-					{
-						MatchExpressions: t.getSelectorRequirements(),
-					},
-				},
+				NodeSelectorTerms: t.getSelectorTerms(),
 			},
 		}
 	}
+
 	if t.runOnMaster {
 		masterTolerationFound := false
 		for _, t := range toUpdate.Spec.Placement.Tolerations {

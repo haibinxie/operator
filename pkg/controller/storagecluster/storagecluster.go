@@ -899,16 +899,7 @@ func (c *Controller) nodeShouldRunStoragePod(
 		return false, true, nil
 	}
 
-	var template v1.PodTemplateSpec
-	template, err = c.createPodTemplate(cluster, node, "")
-	if err != nil {
-		return false, false, err
-	}
-
-	var newPod *v1.Pod
-	newPod, err = k8scontroller.GetPodFromTemplate(&template, cluster, nil)
-
-	//newPod, err := c.newSimulationPod(cluster, node.Name)
+	newPod, err := c.newSimulationPod(cluster, node)
 	if err != nil {
 		logrus.Debugf("Failed to create a pod spec for node %v: %v", node.Name, err)
 		return false, false, err
@@ -936,7 +927,7 @@ func (c *Controller) createPodTemplate(
 	node *v1.Node,
 	hash string,
 ) (v1.PodTemplateSpec, error) {
-	clusterCopy := GetClusterCopyWithRunOnMaster(cluster, node)
+	clusterCopy := GetClusterCopyWithRunOnMaster(cluster, node, c.Driver)
 	podSpec, err := c.Driver.GetStoragePodSpec(clusterCopy, node.Name)
 
 	if err != nil {
@@ -971,6 +962,20 @@ func (c *Controller) createPodTemplate(
 		newTemplate.Labels[defaultStorageClusterUniqueLabelKey] = hash
 	}
 	return newTemplate, nil
+}
+
+func (c *Controller) newSimulationPod(
+	cluster *corev1.StorageCluster,
+	node *v1.Node,
+) (*v1.Pod, error) {
+	template, err := c.createPodTemplate(cluster, node, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var pod *v1.Pod
+	pod, err = k8scontroller.GetPodFromTemplate(&template, cluster, nil)
+	return pod, nil
 }
 
 // checkPredicates checks if a StorageCluster pod can run on a node
@@ -1157,23 +1162,43 @@ func (c *Controller) log(clus *corev1.StorageCluster) *logrus.Entry {
 // both master and worker. This is needed for IBM OCP cluster where all nodes are labelled master and worker.
 func GetClusterCopyWithRunOnMaster(
 	cluster *corev1.StorageCluster,
-	node *v1.Node) *corev1.StorageCluster {
-	clusterCopy := *cluster
+	node *v1.Node,
+	driver storage.Driver) *corev1.StorageCluster {
+	clusterCopy := cluster.DeepCopy()
 
 	_, isWorker := node.Labels["node-role.kubernetes.io/worker"]
 	_, isMaster := node.Labels["node-role.kubernetes.io/master"]
 
 	// If a node is labelled as master and worker, we will let pod run on it.
 	if isWorker && isMaster {
-		clusterCopy.Annotations = map[string]string{}
 		clusterCopy.Annotations[pxutil.AnnotationRunOnMaster] = "true"
-
-		for k, v := range cluster.Annotations {
-			clusterCopy.Annotations[k] = v
-		}
+		driver.SetDefaultsOnStorageCluster(clusterCopy)
+		//masterTolerationFound := false
+		//
+		//if clusterCopy.Spec.Placement == nil {
+		//	clusterCopy.Spec.Placement = &corev1.PlacementSpec{}
+		//}
+		//
+		//for _, t := range clusterCopy.Spec.Placement.Tolerations {
+		//	if t.Key == "node-role.kubernetes.io/master" &&
+		//		t.Effect == v1.TaintEffectNoSchedule {
+		//		masterTolerationFound = true
+		//		break
+		//	}
+		//}
+		//
+		//if !masterTolerationFound {
+		//	clusterCopy.Spec.Placement.Tolerations = append(
+		//		clusterCopy.Spec.Placement.Tolerations,
+		//		v1.Toleration{
+		//			Key:    "node-role.kubernetes.io/master",
+		//			Effect: v1.TaintEffectNoSchedule,
+		//		},
+		//	)
+		//}
 	}
 
-	return &clusterCopy
+	return clusterCopy
 }
 
 func storagePodsEnabled(

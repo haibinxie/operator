@@ -366,7 +366,7 @@ func (c *Controller) createKVDBPod(
 	storageNode *corev1.StorageNode,
 	node *v1.Node,
 ) (*v1.Pod, error) {
-	clusterCopy := storagecluster.GetClusterCopyWithRunOnMaster(cluster, node)
+	clusterCopy := storagecluster.GetClusterCopyWithRunOnMaster(cluster, node, c.Driver)
 	podSpec, err := c.Driver.GetKVDBPodSpec(clusterCopy, storageNode.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kvdb pod template: %v", err)

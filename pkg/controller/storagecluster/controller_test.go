@@ -829,7 +829,7 @@ func TestStoragePodsShouldNotBeScheduledIfDisabled(t *testing.T) {
 	require.Empty(t, podControl.Templates)
 }
 
-func TestStoragePodGetsScheduled(t *testing.T) {
+func TestStoragePodGetsScheduledOnMasterWorkerNode(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -839,7 +839,14 @@ func TestStoragePodGetsScheduled(t *testing.T) {
 
 	// Kubernetes node with resources to create a pod
 	k8sNode1 := createK8sNode("k8s-node-1", 1)
+	k8sNode1.Labels = map[string]string{}
+	k8sNode1.Labels["node-role.kubernetes.io/master"] = ""
+	k8sNode1.Labels["node-role.kubernetes.io/worker"] = ""
+
 	k8sNode2 := createK8sNode("k8s-node-2", 1)
+	k8sNode2.Labels = map[string]string{}
+	k8sNode2.Labels["node-role.kubernetes.io/master"] = ""
+	k8sNode2.Labels["node-role.kubernetes.io/worker"] = ""
 
 	k8sVersion, _ := version.NewVersion(minSupportedK8sVersion)
 	driver := testutil.MockDriver(mockCtrl)
@@ -857,6 +864,12 @@ func TestStoragePodGetsScheduled(t *testing.T) {
 
 	expectedPodSpec := v1.PodSpec{
 		Containers: []v1.Container{{Name: "test"}},
+		Tolerations: []v1.Toleration{
+			v1.Toleration{
+				Key:    "node-role.kubernetes.io/master",
+				Effect: v1.TaintEffectNoSchedule,
+			},
+		},
 	}
 	k8s.AddOrUpdateStoragePodTolerations(&expectedPodSpec)
 	expectedPodTemplate := &v1.PodTemplateSpec{
@@ -865,6 +878,9 @@ func TestStoragePodGetsScheduled(t *testing.T) {
 			Labels: map[string]string{
 				constants.LabelKeyClusterName: cluster.Name,
 				constants.LabelKeyDriverName:  driverName,
+			},
+			Annotations: map[string]string{
+				"operator.libopenstorage.org/node-labels": "{\"node-role.kubernetes.io/master\":\"\",\"node-role.kubernetes.io/worker\":\"\"}",
 			},
 		},
 		Spec: expectedPodSpec,
