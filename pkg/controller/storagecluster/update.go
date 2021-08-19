@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	storageapi "github.com/libopenstorage/openstorage/api"
 	"reflect"
 	"sort"
 
@@ -394,8 +395,28 @@ func (c *Controller) getUnavailableNumbers(
 			"update of storage cluster  %#v: %v", cluster, err)
 	}
 
+	storageNodeList, err := c.Driver.GetStorageNodes(cluster)
+	if err != nil {
+		return -1, -1, fmt.Errorf("couldn't get list of storage nodes during rolling "+
+			"update of storage cluster  %#v: %v", cluster, err)
+	}
+	storageNodeMap := make(map[string]*storageapi.StorageNode)
+	for _, storageNode := range storageNodeList {
+		storageNodeMap[storageNode.SchedulerNodeName] = storageNode
+	}
+
 	var numUnavailable, desiredNumberScheduled int
 	for _, node := range nodeList.Items {
+		// If the node has a storage node and it is not healthy.
+		if storageNode, ok := storageNodeMap[node.Name]; ok {
+			delete(storageNodeMap, node.Name)
+			if storageNode.Status != storageapi.Status_STATUS_OK {
+				logrus.WithField("StorageNode", storageNode).Info("Storage node is not healthy")
+				numUnavailable++
+				continue
+			}
+		}
+
 		wantToRun, _, err := c.nodeShouldRunStoragePod(&node, cluster)
 		logrus.WithFields(logrus.Fields{
 			"node":      node.Name,
@@ -423,6 +444,14 @@ func (c *Controller) getUnavailableNumbers(
 			}
 		}
 		if !available {
+			numUnavailable++
+		}
+	}
+
+	// For the storage nodes that do not have a corresponding k8s node.
+	for _, storageNode := range storageNodeMap {
+		if storageNode.Status != storageapi.Status_STATUS_OK {
+			logrus.WithField("StorageNode", storageNode).Info("Storage node is not healthy")
 			numUnavailable++
 		}
 	}
