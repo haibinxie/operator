@@ -831,11 +831,7 @@ func (c *Controller) podsShouldBeOnNode(
 
 	switch {
 	case shouldRun && !exists:
-		if k8s.IsPodRecentlyCreatedAfterNodeCordoned(node, c.lastPodCreationTime, cluster) {
-			logrus.Infof("node %s is recently created after node cordoned, will not recreate it", node.Name)
-		} else {
-			nodesNeedingStoragePods = append(nodesNeedingStoragePods, node.Name)
-		}
+		nodesNeedingStoragePods = append(nodesNeedingStoragePods, node.Name)
 	case shouldContinueRunning:
 		// If a storage pod failed, delete it.
 		// If there's no storage pod left on this node, we will create it in the next sync loop
@@ -898,6 +894,10 @@ func (c *Controller) nodeShouldRunStoragePod(
 
 	if isBeingDeleted {
 		logrus.Infof("node: %s is in the process of being deleted. Will not create new pods here.", node.Name)
+		return false, true, nil
+	}
+
+	if k8s.IsPodRecentlyCreatedAfterNodeCordoned(node, c.lastPodCreationTime, cluster) {
 		return false, true, nil
 	}
 
