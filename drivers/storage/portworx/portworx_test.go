@@ -2018,6 +2018,167 @@ func TestUpdateClusterStatus(t *testing.T) {
 	require.Equal(t, "Unknown", cluster.Status.Phase)
 }
 
+func TestUpdateStorageNodePhase(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	// Create the mock servers that can be used to mock SDK calls
+	mockClusterServer := mock.NewMockOpenStorageClusterServer(mockCtrl)
+	mockNodeServer := mock.NewMockOpenStorageNodeServer(mockCtrl)
+
+	// Start a sdk server that implements the mock servers
+	sdkServerIP := "127.0.0.1"
+	sdkServerPort := 21883
+	mockSdk := mock.NewSdkServer(mock.SdkServers{
+		Cluster: mockClusterServer,
+		Node:    mockNodeServer,
+	})
+	mockSdk.StartOnAddress(sdkServerIP, strconv.Itoa(sdkServerPort))
+	defer mockSdk.Stop()
+
+	cluster := &corev1.StorageCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "px-cluster",
+			Namespace: "kube-test",
+		},
+		Status: corev1.StorageClusterStatus{
+			Phase: "Initializing",
+		},
+	}
+	pxStorageNodes := []*api.StorageNode{
+		{
+			Id:                "id1",
+			SchedulerNodeName: "schedulerNodeName1",
+			Status:            api.Status_STATUS_OK,
+		},
+		{
+			Id:                "id2",
+			SchedulerNodeName: "schedulerNodeName2",
+			Status:            api.Status_STATUS_OK,
+		},
+		{
+			Id:                "id3",
+			SchedulerNodeName: "schedulerNodeName3",
+			Status:            api.Status_STATUS_OFFLINE,
+		},
+	}
+	k8sStorageNodes := []*corev1.StorageNode{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pxStorageNodes[0].SchedulerNodeName,
+				Namespace: cluster.Namespace,
+			},
+			Status: corev1.NodeStatus{
+				Phase: "",
+				Conditions: []corev1.NodeCondition{
+					{
+						Type:               corev1.NodeInitCondition,
+						Status:             corev1.NodeSucceededStatus,
+						LastTransitionTime: metav1.NewTime(time.Now()),
+					},
+					{
+						Type:               corev1.NodeStateCondition,
+						Status:             corev1.NodeOnlineStatus,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(time.Minute * -1)),
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pxStorageNodes[1].SchedulerNodeName,
+				Namespace: cluster.Namespace,
+			},
+			Status: corev1.NodeStatus{
+				Phase: "",
+				Conditions: []corev1.NodeCondition{
+					{
+						Type:               corev1.NodeInitCondition,
+						Status:             corev1.NodeSucceededStatus,
+						LastTransitionTime: metav1.NewTime(time.Now()),
+					},
+					{
+						Type:               corev1.NodeStateCondition,
+						Status:             corev1.NodeMaintenanceStatus,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(time.Minute)),
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pxStorageNodes[2].SchedulerNodeName,
+				Namespace: cluster.Namespace,
+			},
+			Status: corev1.NodeStatus{
+				Phase: "",
+				Conditions: []corev1.NodeCondition{
+					{
+						Type:               corev1.NodeInitCondition,
+						Status:             corev1.NodeSucceededStatus,
+						LastTransitionTime: metav1.NewTime(time.Now()),
+					},
+					{
+						Type:               corev1.NodeStateCondition,
+						Status:             corev1.NodeOnlineStatus,
+						LastTransitionTime: metav1.NewTime(time.Now().Add(time.Minute)),
+					},
+				},
+			},
+		},
+	}
+
+	// Create fake k8s client with fake service that will point the client
+	// to the mock sdk server address
+	k8sClient := testutil.FakeK8sClient(&v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pxutil.PortworxServiceName,
+			Namespace: "kube-test",
+		},
+		Spec: v1.ServiceSpec{
+			ClusterIP: sdkServerIP,
+			Ports: []v1.ServicePort{
+				{
+					Name: pxutil.PortworxSDKPortName,
+					Port: int32(sdkServerPort),
+				},
+			},
+		},
+	}, k8sStorageNodes[0], k8sStorageNodes[1], k8sStorageNodes[2])
+
+	// Create driver object with the fake k8s client
+	driver := portworx{
+		k8sClient: k8sClient,
+	}
+
+	expectedClusterResp := &api.SdkClusterInspectCurrentResponse{
+		Cluster: &api.StorageCluster{},
+	}
+	mockClusterServer.EXPECT().
+		InspectCurrent(gomock.Any(), &api.SdkClusterInspectCurrentRequest{}).
+		Return(expectedClusterResp, nil).
+		AnyTimes()
+
+	expectedNodeEnumerateResp := &api.SdkNodeEnumerateWithFiltersResponse{
+		Nodes: pxStorageNodes,
+	}
+	mockNodeServer.EXPECT().
+		EnumerateWithFilters(gomock.Any(), &api.SdkNodeEnumerateWithFiltersRequest{}).
+		Return(expectedNodeEnumerateResp, nil).
+		Times(1)
+
+	err := driver.UpdateStorageClusterStatus(cluster)
+	require.NoError(t, err)
+
+	nodeStatusList := &corev1.StorageNodeList{}
+	err = testutil.List(k8sClient, nodeStatusList)
+	require.NoError(t, err)
+	require.Len(t, nodeStatusList.Items, 3)
+	require.Equal(t, "Online", nodeStatusList.Items[0].Status.Phase)
+	require.Equal(t, "Online", nodeStatusList.Items[1].Status.Phase)
+	require.Equal(t, "Offline", nodeStatusList.Items[2].Status.Phase)
+}
+
 func TestUpdateClusterStatusForNodes(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -3274,8 +3435,16 @@ func TestUpdateClusterStatusShouldUpdateNodePhaseBasedOnConditions(t *testing.T)
 	require.Len(t, storageNodes.Items, 1)
 	require.Equal(t, string(corev1.NodeFailedStatus), storageNodes.Items[0].Status.Phase)
 
-	// TestCase: NodeInit condition happened at the same time as NodeState, then
+	// TestCase: NodeInit condition is succeeded, then
 	// phase should have use NodeState as that is the latest response from SDK
+	operatorops.Instance().UpdateStorageNodeCondition(
+		&storageNodes.Items[0].Status,
+		&corev1.NodeCondition{
+			Type:   corev1.NodeInitCondition,
+			Status: corev1.NodeSucceededStatus,
+		},
+	)
+	k8sClient.Status().Update(context.TODO(), &storageNodes.Items[0])
 	mockNodeServer.EXPECT().
 		EnumerateWithFilters(gomock.Any(), &api.SdkNodeEnumerateWithFiltersRequest{}).
 		Return(expectedNodeEnumerateResp, nil).

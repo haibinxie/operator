@@ -4,10 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
-	"strings"
-	"time"
-
 	"github.com/libopenstorage/openstorage/api"
 	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
 	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
@@ -22,7 +18,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
 )
 
 const (
@@ -468,30 +466,25 @@ func mapNodeStatus(status api.Status) corev1.NodeConditionStatus {
 }
 
 func getStorageNodePhase(status *corev1.NodeStatus) string {
-	latestTime := metav1.NewTime(time.Time{})
-	var latestCondition *corev1.NodeCondition
-
+	var nodeInitCondition *corev1.NodeCondition
+	var nodeStateCondition *corev1.NodeCondition
 	for _, condition := range status.Conditions {
-		// Find the latest condition. If it is InitCondition, and has
-		// the same timestamp as the latest one then don't make it latest
-		if latestTime.Before(&condition.LastTransitionTime) ||
-			latestTime.IsZero() ||
-			(latestTime.Equal(&condition.LastTransitionTime) &&
-				condition.Type != corev1.NodeInitCondition) {
-			latestCondition = condition.DeepCopy()
-			latestTime = condition.LastTransitionTime
+		if condition.Type == corev1.NodeInitCondition {
+			nodeInitCondition = condition.DeepCopy()
+		} else if condition.Type == corev1.NodeStateCondition {
+			nodeStateCondition = condition.DeepCopy()
 		}
 	}
 
-	// If no condition or status found return Initializing phase.
-	// Also if the InitCondition is the latest condition and it has succeeded,
-	// then keep the node phase as Initializing
-	if latestCondition == nil || latestCondition.Status == "" ||
-		(latestCondition.Type == corev1.NodeInitCondition &&
-			latestCondition.Status == corev1.NodeSucceededStatus) {
-		return string(corev1.NodeInitStatus)
+	if nodeInitCondition == nil || nodeInitCondition.Status == corev1.NodeSucceededStatus {
+		if nodeStateCondition == nil {
+			return string(corev1.NodeInitStatus)
+		} else {
+			return string(nodeStateCondition.Status)
+		}
 	}
-	return string(latestCondition.Status)
+
+	return string(nodeInitCondition.Status)
 }
 
 func blobToBootstrapEntries(
