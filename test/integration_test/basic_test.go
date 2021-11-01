@@ -21,6 +21,14 @@ func TestStorageClusterBasic(t *testing.T) {
 	t.Run("Upgrade", testUpgrade)
 }
 
+func testInstallMetricsCollector(t *testing.T) {
+	// Create secret pure-telemetry-certs
+
+	// Deploy portworx with telemetry set to true
+
+	// Verify metrics collector pod is up and running
+}
+
 func testInstallWithAllDefaults(t *testing.T) {
 	// Get versions from URL
 	logrus.Infof("Get component images from versions URL")
