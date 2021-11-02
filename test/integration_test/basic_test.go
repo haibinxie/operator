@@ -3,6 +3,8 @@
 package integrationtest
 
 import (
+	"github.com/libopenstorage/operator/drivers/storage/portworx/component"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"strings"
 	"testing"
 
@@ -16,17 +18,58 @@ import (
 )
 
 func TestStorageClusterBasic(t *testing.T) {
+	testutil.TestSpecPath = ""
 	t.Run("InstallWithAllDefaults", testInstallWithAllDefaults)
 	t.Run("NodeAffinityLabels", testNodeAffinityLabels)
 	t.Run("Upgrade", testUpgrade)
+	t.Run("InstallMetricsCollector", testInstallMetricsCollector)
 }
 
 func testInstallMetricsCollector(t *testing.T) {
-	// Create secret pure-telemetry-certs
+	secret := testutil.GetExpectedSecret(t, "/specs/pure-telemetry-cert.yaml")
+	require.NotNil(t, secret)
+
+	_, err := coreops.Instance().GetSecret(component.TelemetryCertName, pxNamespace)
+	require.True(t, err == nil || errors.IsNotFound(err))
+
+	if errors.IsNotFound(err) {
+		secret, err = coreops.Instance().CreateSecret(secret)
+		require.NoError(t, err)
+	} else {
+		secret, err = coreops.Instance().UpdateSecret(secret)
+		require.NoError(t, err)
+	}
 
 	// Deploy portworx with telemetry set to true
+	cluster, err := constructDefaultStorageCluster()
+	require.NoError(t, err)
 
-	// Verify metrics collector pod is up and running
+	cluster.Spec.Monitoring = &op_corev1.MonitoringSpec{
+		Telemetry: &op_corev1.TelemetrySpec{
+			Enabled: true,
+		},
+	}
+
+	cluster, err = createStorageCluster(cluster)
+	require.NoError(t, err)
+
+	// Validate metrics collector pod becomes ready
+	err = testutil.ValidatePods(
+		cluster.Namespace,
+		map[string]string{"role": "realtime-metrics-collector"},
+		defaultValidateDeployTimeout,
+		defaultValidateDeployRetryInterval)
+	require.NoError(t, err)
+
+	// Delete cluster
+	logrus.Infof("Delete StorageCluster %s", cluster.Name)
+	err = testutil.UninstallStorageCluster(cluster)
+	require.NoError(t, err)
+
+	// Validate cluster deletion
+	logrus.Infof("Validate StorageCluster %s deletion", cluster.Name)
+	err = testutil.ValidateUninstallStorageCluster(cluster, defaultValidateUninstallTimeout, defaultValidateUninstallRetryInterval)
+	require.NoError(t, err)
 }
 
 func testInstallWithAllDefaults(t *testing.T) {
