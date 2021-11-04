@@ -159,21 +159,6 @@ func setup() error {
 	return nil
 }
 
-func constructDefaultStorageCluster() (*corev1.StorageCluster, error) {
-	imageListMap, err := testutil.GetImagesFromVersionURL(pxSpecGenURL)
-	if err != nil {
-		return nil, err
-	}
-
-	cluster, err := constructStorageCluster(pxSpecGenURL, imageListMap)
-	if err != nil {
-		return nil, err
-	}
-
-	cluster.Name = "test-sc"
-	return cluster, nil
-}
-
 // Here we make StorageCluster object and add all the common basic parameters that all StorageCluster should have
 func constructStorageCluster(specGenURL string, imageListMap map[string]string) (*corev1.StorageCluster, error) {
 	cluster := &corev1.StorageCluster{}

@@ -3,29 +3,29 @@
 package integrationtest
 
 import (
-	"github.com/libopenstorage/operator/drivers/storage/portworx/component"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/require"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"strings"
 	"testing"
 
-	"github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/require"
-	v1 "k8s.io/api/core/v1"
+	"github.com/libopenstorage/operator/drivers/storage/portworx/component"
+
+	coreops "github.com/portworx/sched-ops/k8s/core"
 
 	op_corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 	testutil "github.com/libopenstorage/operator/pkg/util/test"
-	coreops "github.com/portworx/sched-ops/k8s/core"
 )
 
 func TestStorageClusterBasic(t *testing.T) {
-	testutil.TestSpecPath = ""
 	t.Run("InstallWithAllDefaults", testInstallWithAllDefaults)
 	t.Run("NodeAffinityLabels", testNodeAffinityLabels)
 	t.Run("Upgrade", testUpgrade)
-	t.Run("InstallMetricsCollector", testInstallMetricsCollector)
+	t.Run("InstallWithTelemetry", testInstallWithTelemetry)
 }
 
-func testInstallMetricsCollector(t *testing.T) {
+func testInstallWithTelemetry(t *testing.T) {
 	secret := testutil.GetExpectedSecret(t, "/specs/pure-telemetry-cert.yaml")
 	require.NotNil(t, secret)
 
@@ -41,9 +41,13 @@ func testInstallMetricsCollector(t *testing.T) {
 	}
 
 	// Deploy portworx with telemetry set to true
-	cluster, err := constructDefaultStorageCluster()
+	imageListMap, err := testutil.GetImagesFromVersionURL(pxSpecGenURL)
 	require.NoError(t, err)
 
+	cluster, err := constructStorageCluster(pxSpecGenURL, imageListMap)
+	require.NoError(t, err)
+
+	cluster.Name = "test-sc"
 	cluster.Spec.Monitoring = &op_corev1.MonitoringSpec{
 		Telemetry: &op_corev1.TelemetrySpec{
 			Enabled: true,
@@ -53,10 +57,9 @@ func testInstallMetricsCollector(t *testing.T) {
 	cluster, err = createStorageCluster(cluster)
 	require.NoError(t, err)
 
-	// Validate metrics collector pod becomes ready
-	err = testutil.ValidatePods(
-		cluster.Namespace,
-		map[string]string{"role": "realtime-metrics-collector"},
+	err = testutil.ValidateTelemetry(
+		imageListMap,
+		cluster,
 		defaultValidateDeployTimeout,
 		defaultValidateDeployRetryInterval)
 	require.NoError(t, err)
@@ -69,6 +72,9 @@ func testInstallMetricsCollector(t *testing.T) {
 	// Validate cluster deletion
 	logrus.Infof("Validate StorageCluster %s deletion", cluster.Name)
 	err = testutil.ValidateUninstallStorageCluster(cluster, defaultValidateUninstallTimeout, defaultValidateUninstallRetryInterval)
+	require.NoError(t, err)
+
+	err = coreops.Instance().DeleteSecret(secret.Name, secret.Namespace)
 	require.NoError(t, err)
 }
 
