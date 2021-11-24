@@ -99,7 +99,7 @@ func (c *pvcController) Reconcile(cluster *corev1.StorageCluster) error {
 	if err := c.createServiceAccount(cluster.Namespace, ownerRef); err != nil {
 		return err
 	}
-	if err := c.createClusterRole(); err != nil {
+	if err := c.createClusterRole(cluster); err != nil {
 		return err
 	}
 	if err := c.createClusterRoleBinding(cluster.Namespace); err != nil {
@@ -150,7 +150,7 @@ func (c *pvcController) createServiceAccount(
 	)
 }
 
-func (c *pvcController) createClusterRole() error {
+func (c *pvcController) createClusterRole(cluster *corev1.StorageCluster) error {
 	return k8sutil.CreateOrUpdateClusterRole(
 		c.k8sClient,
 		&rbacv1.ClusterRole{
@@ -226,7 +226,7 @@ func (c *pvcController) createClusterRole() error {
 				{
 					APIGroups:     []string{"security.openshift.io"},
 					Resources:     []string{"securitycontextconstraints"},
-					ResourceNames: []string{"privileged"},
+					ResourceNames: []string{pxutil.GetSCC(cluster)},
 					Verbs:         []string{"use"},
 				},
 				{

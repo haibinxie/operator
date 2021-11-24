@@ -86,7 +86,7 @@ func (c *lighthouse) Reconcile(cluster *corev1.StorageCluster) error {
 	if err := c.createServiceAccount(cluster.Namespace, ownerRef); err != nil {
 		return err
 	}
-	if err := c.createClusterRole(); err != nil {
+	if err := c.createClusterRole(cluster); err != nil {
 		return err
 	}
 	if err := c.createClusterRoleBinding(cluster.Namespace); err != nil {
@@ -143,7 +143,7 @@ func (c *lighthouse) createServiceAccount(
 	)
 }
 
-func (c *lighthouse) createClusterRole() error {
+func (c *lighthouse) createClusterRole(cluster *corev1.StorageCluster) error {
 	return k8sutil.CreateOrUpdateClusterRole(
 		c.k8sClient,
 		&rbacv1.ClusterRole{
@@ -200,7 +200,7 @@ func (c *lighthouse) createClusterRole() error {
 				{
 					APIGroups:     []string{"security.openshift.io"},
 					Resources:     []string{"securitycontextconstraints"},
-					ResourceNames: []string{"privileged", "anyuid"},
+					ResourceNames: []string{pxutil.GetSCC(cluster), "anyuid"},
 					Verbs:         []string{"use"},
 				},
 				{

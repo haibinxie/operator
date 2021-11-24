@@ -903,6 +903,45 @@ func IsTelemetryEnabled(spec corev1.StorageClusterSpec) bool {
 		spec.Monitoring.Telemetry.Enabled
 }
 
+// GetSCC gets configured SCC from storage cluster annotation.
+func GetSCC(cluster *corev1.StorageCluster) string {
+	str := strings.TrimSpace(cluster.Annotations["portworx.io/scc"])
+	if len(str) == 0 {
+		str = "privileged"
+	}
+
+	return str
+}
+
+// GetPrivileged gets if container should be run as privileged
+func GetPrivileged(cluster *corev1.StorageCluster) bool {
+	privStr := strings.TrimSpace(cluster.Annotations["portworx.io/container-privileged"])
+	b, err := strconv.ParseBool(privStr)
+	if err != nil {
+		logrus.WithField("annotation", privStr).WithError(err).Errorf("Failed to parse bool")
+		// Backward compatible: default to true.
+		return true
+	}
+
+	return b
+}
+
+// GetContainerCapabilities gets the capabilities for container
+func GetContainerCapabilities(cluster *corev1.StorageCluster) []v1.Capability {
+	capStr := "SYS_ADMIN,SYS_PTRACE,SYS_RAWIO,SYS_MODULE,LINUX_IMMUTABLE"
+	capConfig := cluster.Annotations["portworx.io/container-caps"]
+	if len(capConfig) > 0 {
+		capStr = capConfig
+	}
+
+	var caps []v1.Capability
+	for _, str := range strings.Split(capStr, ",") {
+		caps = append(caps, v1.Capability(str))
+	}
+
+	return caps
+}
+
 // ApplyStorageClusterSettings applies settings from StorageCluster to deployment of any component
 // Which includes:
 //   namespace

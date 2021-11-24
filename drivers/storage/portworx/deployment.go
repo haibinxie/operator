@@ -58,7 +58,6 @@ type pksVolumeInfo struct {
 }
 
 var (
-
 	// commonVolumeList is the common list of volumes across all containers
 	commonVolumeList = []volumeInfo{
 		{
@@ -299,12 +298,15 @@ func (p *portworx) GetStoragePodSpec(
 	}
 
 	containers := t.portworxContainer(cluster)
+	// https://estl.tech/accessing-docker-from-a-kubernetes-pod-68996709c04b
+	//fsGroup := int64(412)
 	podSpec := v1.PodSpec{
 		HostNetwork:        true,
 		RestartPolicy:      v1.RestartPolicyAlways,
 		ServiceAccountName: pxutil.PortworxServiceAccountName(cluster),
 		Containers:         []v1.Container{containers},
 		Volumes:            t.getVolumes(),
+		//SecurityContext:    &v1.PodSecurityContext {FSGroup: &fsGroup,},
 	}
 
 	if pxutil.IsCSIEnabled(t.cluster) {
@@ -487,17 +489,26 @@ func configureStorageNodeSpec(node *corev1.StorageNode, config *cloudstorage.Con
 
 func (t *template) portworxContainer(cluster *corev1.StorageCluster) v1.Container {
 	pxImage := util.GetImageURN(t.cluster, t.cluster.Spec.Image)
+	//sc := &v1.SecurityContext{
+	//	Privileged: boolPtr(true),
+	//}
+	//if t.isBottleRocketOS() {
+	//	sc.Privileged = boolPtr(false)
+	//	sc.Capabilities = &v1.Capabilities{
+	//		Add: []v1.Capability{
+	//			"SYS_ADMIN", "SYS_PTRACE", "SYS_RAWIO", "SYS_MODULE", "LINUX_IMMUTABLE",
+	//		},
+	//	}
+	//}
+	//runAsUser := int64(0)
 	sc := &v1.SecurityContext{
-		Privileged: boolPtr(true),
+		Privileged: boolPtr(pxutil.GetPrivileged(cluster)),
+		//RunAsUser: &runAsUser,
+		Capabilities: &v1.Capabilities{
+			Add: pxutil.GetContainerCapabilities(t.cluster),
+		},
 	}
-	if t.isBottleRocketOS() {
-		sc.Privileged = boolPtr(false)
-		sc.Capabilities = &v1.Capabilities{
-			Add: []v1.Capability{
-				"SYS_ADMIN", "SYS_PTRACE", "SYS_RAWIO", "SYS_MODULE", "LINUX_IMMUTABLE",
-			},
-		}
-	}
+
 	container := v1.Container{
 		Name:            pxContainerName,
 		Image:           pxImage,
@@ -674,7 +685,10 @@ func (t *template) telemetryContainer() *v1.Container {
 			PeriodSeconds: 30,
 		},
 		SecurityContext: &v1.SecurityContext{
-			Privileged: boolPtr(true),
+			Privileged: boolPtr(pxutil.GetPrivileged(t.cluster)),
+			Capabilities: &v1.Capabilities{
+				Add: pxutil.GetContainerCapabilities(t.cluster),
+			},
 		},
 		VolumeMounts: t.mountsFromVolInfo(t.getTelemetryVolumeInfoList()),
 	}

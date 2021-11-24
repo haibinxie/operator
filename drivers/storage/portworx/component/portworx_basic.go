@@ -66,7 +66,8 @@ func (c *portworxBasic) Reconcile(cluster *corev1.StorageCluster) error {
 			return NewError(ErrCritical, err)
 		}
 	}
-	if err := c.createClusterRole(); err != nil {
+
+	if err := c.createClusterRole(cluster); err != nil {
 		return NewError(ErrCritical, err)
 	}
 	if err := c.createClusterRoleBinding(saName, cluster.Namespace); err != nil {
@@ -290,7 +291,7 @@ func (c *portworxBasic) createRoleBinding(
 	return k8sutil.CreateOrUpdateRoleBinding(c.k8sClient, roleBinding, nil)
 }
 
-func (c *portworxBasic) createClusterRole() error {
+func (c *portworxBasic) createClusterRole(cluster *corev1.StorageCluster) error {
 	return k8sutil.CreateOrUpdateClusterRole(
 		c.k8sClient,
 		&rbacv1.ClusterRole{
@@ -376,7 +377,7 @@ func (c *portworxBasic) createClusterRole() error {
 				{
 					APIGroups:     []string{"security.openshift.io"},
 					Resources:     []string{"securitycontextconstraints"},
-					ResourceNames: []string{"privileged"},
+					ResourceNames: []string{pxutil.GetSCC(cluster)},
 					Verbs:         []string{"use"},
 				},
 				{

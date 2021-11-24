@@ -8,12 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/libopenstorage/operator/drivers/storage/portworx/manifest"
-	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
-	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
-	"github.com/libopenstorage/operator/pkg/constants"
-	"github.com/libopenstorage/operator/pkg/util"
-	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 	"github.com/portworx/kvdb"
 	"github.com/portworx/kvdb/consul"
 	e2 "github.com/portworx/kvdb/etcd/v2"
@@ -27,6 +21,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/libopenstorage/operator/drivers/storage/portworx/manifest"
+	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
+	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
+	"github.com/libopenstorage/operator/pkg/constants"
+	"github.com/libopenstorage/operator/pkg/util"
+	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 )
 
 var (
@@ -172,7 +173,7 @@ func (u *uninstallPortworx) RunNodeWiper(
 		pwxHostPathRoot = pksPersistentStoreRoot
 	}
 
-	trueVar := true
+	//	trueVar := true
 	labels := map[string]string{
 		"name": pxNodeWiperDaemonSetName,
 	}
@@ -222,6 +223,7 @@ func (u *uninstallPortworx) RunNodeWiper(
 					Labels: labels,
 				},
 				Spec: v1.PodSpec{
+					HostNetwork: true,
 					Containers: []v1.Container{
 						{
 							Name:            pxNodeWiperDaemonSetName,
@@ -229,7 +231,10 @@ func (u *uninstallPortworx) RunNodeWiper(
 							ImagePullPolicy: pxutil.ImagePullPolicy(u.cluster),
 							Args:            args,
 							SecurityContext: &v1.SecurityContext{
-								Privileged: &trueVar,
+								Privileged: boolPtr(pxutil.GetPrivileged(u.cluster)),
+								Capabilities: &v1.Capabilities{
+									Add: pxutil.GetContainerCapabilities(u.cluster),
+								},
 							},
 							ReadinessProbe: &v1.Probe{
 								InitialDelaySeconds: 30,
@@ -451,6 +456,7 @@ func (u *uninstallPortworx) createServiceAccount(
 }
 
 func (u *uninstallPortworx) createClusterRole() error {
+
 	return k8sutil.CreateOrUpdateClusterRole(
 		u.k8sClient,
 		&rbacv1.ClusterRole{
@@ -461,7 +467,7 @@ func (u *uninstallPortworx) createClusterRole() error {
 				{
 					APIGroups:     []string{"security.openshift.io"},
 					Resources:     []string{"securitycontextconstraints"},
-					ResourceNames: []string{"privileged"},
+					ResourceNames: []string{pxutil.GetSCC(u.cluster)},
 					Verbs:         []string{"use"},
 				},
 				{
