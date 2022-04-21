@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,6 +67,7 @@ func New(ctrl *storagecluster.Controller) *Handler {
 // Start starts the migration
 func (h *Handler) Start() {
 	var pxDaemonSet *appsv1.DaemonSet
+	var lastCluster *corev1.StorageCluster
 
 	wait.PollImmediateInfinite(migrationRetryIntervalFunc(), func() (bool, error) {
 		var err error
@@ -88,6 +90,20 @@ func (h *Handler) Start() {
 		if err != nil {
 			logrus.Errorf("Failed to collect daemonset components. %v", err)
 			return false, nil
+		}
+
+		// Only execute dry run if storage cluster has changed.
+		if !reflect.DeepEqual(lastCluster, cluster) {
+			err = h.dryRun(cluster, pxDaemonSet)
+			if err != nil {
+				k8sutil.InfoEvent(h.ctrl.GetEventRecorder(), cluster, util.DryRunCompletedReason,
+					fmt.Sprintf("DryRun failed: %v", err))
+			} else {
+				k8sutil.InfoEvent(h.ctrl.GetEventRecorder(), cluster, util.DryRunCompletedReason,
+					"DryRun completed successfully")
+			}
+
+			lastCluster = cluster
 		}
 
 		if !h.isMigrationApproved(cluster) {
