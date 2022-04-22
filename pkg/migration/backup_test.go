@@ -157,6 +157,7 @@ func testBackup(t *testing.T, backupExits, collectionExists bool) {
 	driver.EXPECT().GetSelectorLabels().Return(nil).AnyTimes()
 	driver.EXPECT().SetDefaultsOnStorageCluster(gomock.Any()).AnyTimes()
 	driver.EXPECT().String().Return("mock-driver").AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 	go migrator.Start()

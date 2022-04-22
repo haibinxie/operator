@@ -5,46 +5,54 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/hashicorp/go-version"
+
 	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 	"github.com/libopenstorage/operator/pkg/util"
+	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 )
 
-//const (
-//	dryRunLogFile = "portworxMigrationDryRun.log"
-//)
-//
-//func (h *Handler) writeDryRunLog(msg string) {
-//	f, err := os.OpenFile(dryRunLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-//	if err != nil {
-//		logrus.Warningf("failed to open log %v", err)
-//		return
-//	}
-//
-//	defer f.Close()
-//	if _, err := f.WriteString(msg); err != nil {
-//		logrus.Warningf("failed to write log %v", err)
-//	}
-//}
-
 func (h *Handler) dryRun(cluster *corev1.StorageCluster, ds *appsv1.DaemonSet) error {
-	//os.Remove(dryRunLogFile)
-	//h.writeDryRunLog("")
+	k8sVersion, err := k8sutil.GetVersion()
+	if err != nil {
+		return err
+	}
+	minVer, err := version.NewVersion("1.16")
+	if err != nil {
+		return fmt.Errorf("error parsing version '1.16': %v", err)
+	}
 
+	if !k8sVersion.GreaterThanOrEqual(minVer) {
+		return fmt.Errorf("unsupported k8s version %v, please upgrade k8s to %s+ before migration", k8sVersion, minVer)
+	}
+
+	// We don't block migration if difference is found in spec. Instead
+	// raise an event and let user review before approving migration.
+	if err := h.validateSpec(cluster, ds); err != nil {
+		k8sutil.WarningEvent(h.ctrl.GetEventRecorder(), cluster, util.DryRunFailedReason,
+			fmt.Sprintf("Spec validation failed: %v", err))
+	} else {
+		k8sutil.InfoEvent(h.ctrl.GetEventRecorder(), cluster, util.DryRunCompletedReason,
+			fmt.Sprintf("Spec validation completed successfully"))
+	}
+
+	return nil
+}
+
+func (h *Handler) validateSpec(cluster *corev1.StorageCluster, ds *appsv1.DaemonSet) error {
 	var msg string
 	podSpec, err := h.ctrl.Driver.GetStoragePodSpec(cluster, "")
 	if err != nil {
 		return err
 	}
 
-	//h.writeDryRunLog("--- Start compare portworx pod spec (first: daemonset, second: operator)\n")
 	err = h.deepEqualPod(&ds.Spec.Template.Spec, &podSpec)
 	if err != nil {
 		msg += fmt.Sprintf("Validate portworx pod failed, %v\n", err)
 	}
-	//h.writeDryRunLog("--- End compare portworx pod spec\n")
 
 	if msg != "" {
 		return fmt.Errorf(msg)
@@ -71,8 +79,8 @@ func (h *Handler) deepEqualPod(p1, p2 *v1.PodSpec) error {
 		msg += fmt.Sprintf("Validate init-containers failed: %s\n", err.Error())
 	}
 
-	if !reflect.DeepEqual(p1.ImagePullSecrets, p1.ImagePullSecrets) {
-		msg += fmt.Sprintf("ImagePullSecrets are different: first %+v, second: %+v\n", p1.ImagePullSecrets, p1.ImagePullSecrets)
+	if !reflect.DeepEqual(p1.ImagePullSecrets, p2.ImagePullSecrets) {
+		msg += fmt.Sprintf("ImagePullSecrets are different: first %+v, second: %+v\n", p1.ImagePullSecrets, p2.ImagePullSecrets)
 	}
 
 	if msg != "" {
@@ -124,7 +132,9 @@ func (h *Handler) deepEqualVolume(obj1, obj2 interface{}) error {
 		// We dont compare name, but only the content
 		// Ignore hostPath type as nil may represent default value.
 		vol.Name = ""
-		vol.HostPath.Type = nil
+		if vol.HostPath != nil {
+			vol.HostPath.Type = nil
+		}
 		return vol
 	}
 

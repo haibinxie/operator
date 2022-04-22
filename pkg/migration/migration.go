@@ -3,18 +3,11 @@ package migration
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/libopenstorage/operator/drivers/storage"
-	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
-	"github.com/libopenstorage/operator/pkg/constants"
-	"github.com/libopenstorage/operator/pkg/controller/storagecluster"
-	"github.com/libopenstorage/operator/pkg/util"
-	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -28,6 +21,13 @@ import (
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/libopenstorage/operator/drivers/storage"
+	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
+	"github.com/libopenstorage/operator/pkg/constants"
+	"github.com/libopenstorage/operator/pkg/controller/storagecluster"
+	"github.com/libopenstorage/operator/pkg/util"
+	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 )
 
 const (
@@ -67,7 +67,6 @@ func New(ctrl *storagecluster.Controller) *Handler {
 // Start starts the migration
 func (h *Handler) Start() {
 	var pxDaemonSet *appsv1.DaemonSet
-	var lastCluster *corev1.StorageCluster
 
 	wait.PollImmediateInfinite(migrationRetryIntervalFunc(), func() (bool, error) {
 		var err error
@@ -92,18 +91,11 @@ func (h *Handler) Start() {
 			return false, nil
 		}
 
-		// Only execute dry run if storage cluster has changed.
-		if !reflect.DeepEqual(lastCluster, cluster) {
-			err = h.dryRun(cluster, pxDaemonSet)
-			if err != nil {
-				k8sutil.InfoEvent(h.ctrl.GetEventRecorder(), cluster, util.DryRunCompletedReason,
-					fmt.Sprintf("DryRun failed: %v", err))
-			} else {
-				k8sutil.InfoEvent(h.ctrl.GetEventRecorder(), cluster, util.DryRunCompletedReason,
-					"DryRun completed successfully")
-			}
-
-			lastCluster = cluster
+		err = h.dryRun(cluster, pxDaemonSet)
+		if err != nil {
+			k8sutil.WarningEvent(h.ctrl.GetEventRecorder(), cluster, util.DryRunFailedReason,
+				fmt.Sprintf("Dry-run failed: %v", err))
+			return false, nil
 		}
 
 		if !h.isMigrationApproved(cluster) {

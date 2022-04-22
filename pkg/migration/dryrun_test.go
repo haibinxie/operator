@@ -13,13 +13,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/libopenstorage/operator/drivers/storage/portworx/component"
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/libopenstorage/operator/drivers/storage/portworx/manifest"
 	"github.com/libopenstorage/operator/drivers/storage/portworx/mock"
 	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
 	"github.com/libopenstorage/operator/pkg/controller/storagecluster"
 	testutil "github.com/libopenstorage/operator/pkg/util/test"
-	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/client-go/tools/record"
 )
@@ -66,64 +66,8 @@ func TestDryRun(t *testing.T) {
 			},
 		},
 	}
-	portworxService := &v1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      pxServiceName,
-			Namespace: ds.Namespace,
-		},
-		Spec: v1.ServiceSpec{
-			ClusterIP:  "1.2.3.4",
-			ClusterIPs: []string{"1.2.3.4"},
-		},
-	}
-	storkDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      storkDeploymentName,
-			Namespace: ds.Namespace,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Template: v1.PodTemplateSpec{
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{
-							Image: "storkImage",
-						},
-					},
-				},
-			},
-		},
-	}
-	autopilotDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      component.AutopilotDeploymentName,
-			Namespace: ds.Namespace,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Template: v1.PodTemplateSpec{
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{
-							Image: "autopilotImage",
-						},
-					},
-				},
-			},
-		},
-	}
-	csiService := &v1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      csiServiceName,
-			Namespace: ds.Namespace,
-		},
-		Spec: v1.ServiceSpec{
-			ClusterIP: v1.ClusterIPNone,
-		},
-	}
 
-	k8sClient := testutil.FakeK8sClient(
-		ds, portworxService, storkDeployment, autopilotDeployment, csiService,
-	)
-
+	k8sClient := testutil.FakeK8sClient(ds)
 	mockController := gomock.NewController(t)
 	driver := testutil.MockDriver(mockController)
 	ctrl := &storagecluster.Controller{
@@ -136,6 +80,12 @@ func TestDryRun(t *testing.T) {
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).Return(true).AnyTimes()
 
+	// Change image pull secret in spec.
+	ds.Spec.Template.Spec.ImagePullSecrets = []v1.LocalObjectReference{
+		{
+			Name: "testSecret",
+		},
+	}
 	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 	driver.EXPECT().GetSelectorLabels().Return(nil).AnyTimes()
 	driver.EXPECT().SetDefaultsOnStorageCluster(gomock.Any()).AnyTimes()
@@ -145,7 +95,7 @@ func TestDryRun(t *testing.T) {
 	go migrator.Start()
 
 	err := wait.PollImmediate(time.Millisecond*200, time.Second*5, func() (bool, error) {
-		if strings.Contains(reflect.ValueOf(<-recorder.Events).String(), "DryRun completed successfully") {
+		if strings.Contains(reflect.ValueOf(<-recorder.Events).String(), "Spec validation failed") {
 			return true, nil
 		}
 

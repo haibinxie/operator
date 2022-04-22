@@ -18,6 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"k8s.io/client-go/tools/record"
+
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/libopenstorage/operator/drivers/storage/portworx/component"
 	"github.com/libopenstorage/operator/drivers/storage/portworx/manifest"
 	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
@@ -25,7 +29,6 @@ import (
 	"github.com/libopenstorage/operator/pkg/constants"
 	"github.com/libopenstorage/operator/pkg/controller/storagecluster"
 	testutil "github.com/libopenstorage/operator/pkg/util/test"
-	"k8s.io/client-go/tools/record"
 
 	"github.com/libopenstorage/operator/drivers/storage/portworx/mock"
 )
@@ -456,6 +459,7 @@ func testImageMigration(t *testing.T, dsImages, expectedStcImages ImageConfig, a
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).Return(!airGapped).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	driver.EXPECT().GetSelectorLabels().Return(nil).AnyTimes()
 	driver.EXPECT().String().Return("mock-driver").AnyTimes()
@@ -611,6 +615,7 @@ func TestStorageClusterIsCreatedFromOnPremDaemonset(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 
@@ -859,6 +864,7 @@ func TestStorageClusterIsCreatedFromCloudDaemonset(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 
@@ -1012,13 +1018,16 @@ func TestStorageClusterDoesNotHaveSecretsNamespaceIfSameAsClusterNamespace(t *te
 	}
 
 	k8sClient := testutil.FakeK8sClient(ds)
-	ctrl := &storagecluster.Controller{}
+	mockController := gomock.NewController(t)
+	driver := testutil.MockDriver(mockController)
+	ctrl := &storagecluster.Controller{Driver: driver}
 	ctrl.SetEventRecorder(record.NewFakeRecorder(10))
 	ctrl.SetKubernetesClient(k8sClient)
 	migrator := New(ctrl)
 
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
+
 	go migrator.Start()
-	time.Sleep(2 * time.Second)
 
 	expectedCluster := &corev1.StorageCluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1057,8 +1066,16 @@ func TestStorageClusterDoesNotHaveSecretsNamespaceIfSameAsClusterNamespace(t *te
 		},
 	}
 	cluster := &corev1.StorageCluster{}
-	err := testutil.Get(k8sClient, cluster, clusterName, ds.Namespace)
+	err := wait.PollImmediate(time.Millisecond*200, time.Second*15, func() (bool, error) {
+		err := testutil.Get(k8sClient, cluster, clusterName, ds.Namespace)
+		if err != nil {
+			return false, nil
+		}
+
+		return true, nil
+	})
 	require.NoError(t, err)
+
 	require.Equal(t, expectedCluster.Annotations, cluster.Annotations)
 	require.ElementsMatch(t, expectedCluster.Spec.Env, cluster.Spec.Env)
 	expectedCluster.Spec.Env = nil
@@ -1108,6 +1125,7 @@ func TestStorageClusterWithAutoJournalAndOnPremStorage(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).Return(false).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 
@@ -1214,6 +1232,7 @@ func TestStorageClusterWithAutoJournalAndCloudStorage(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).Return(false).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 
@@ -1328,6 +1347,7 @@ func TestWhenStorageClusterIsAlreadyPresent(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 
@@ -1491,6 +1511,7 @@ func TestStorageClusterSpecWithComponents(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 
@@ -1614,6 +1635,7 @@ func TestStorageClusterSpecWithPVCControllerInKubeSystem(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockController)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	migrator := New(ctrl)
 
@@ -1733,6 +1755,7 @@ func TestSuccessfulMigration(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockCtrl)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	driver.EXPECT().GetSelectorLabels().Return(nil).AnyTimes()
 	driver.EXPECT().String().Return("mock-driver").AnyTimes()
@@ -1827,7 +1850,12 @@ func TestSuccessfulMigration(t *testing.T) {
 	err = testutil.Get(k8sClient, currDaemonSet, ds.Name, ds.Namespace)
 	require.True(t, errors.IsNotFound(err))
 
-	require.Contains(t, <-recorder.Events, "Migration completed successfully")
+	close(recorder.Events)
+	var msg string
+	for e := range recorder.Events {
+		msg += e
+	}
+	require.Contains(t, msg, "Migration completed successfully")
 
 	cluster = &corev1.StorageCluster{}
 	err = testutil.Get(k8sClient, cluster, clusterName, ds.Namespace)
@@ -1894,6 +1922,7 @@ func TestFailedMigrationRecoveredWithSkip(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockCtrl)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	driver.EXPECT().GetSelectorLabels().Return(nil).AnyTimes()
 	driver.EXPECT().String().Return("mock-driver").AnyTimes()
@@ -2382,6 +2411,7 @@ func TestOldComponentsAreDeleted(t *testing.T) {
 	mockManifest := mock.NewMockManifest(mockCtrl)
 	manifest.SetInstance(mockManifest)
 	mockManifest.EXPECT().CanAccessRemoteManifest(gomock.Any()).AnyTimes()
+	driver.EXPECT().GetStoragePodSpec(gomock.Any(), gomock.Any()).Return(ds.Spec.Template.Spec, nil).AnyTimes()
 
 	// Start the migration handler
 	migrator := New(ctrl)
