@@ -8,13 +8,19 @@ import (
 
 	"github.com/libopenstorage/operator/drivers/storage"
 	_ "github.com/libopenstorage/operator/drivers/storage/portworx"
+	"github.com/libopenstorage/operator/drivers/storage/portworx/util"
 	"github.com/libopenstorage/operator/pkg/apis"
 	"github.com/libopenstorage/operator/pkg/controller/storagecluster"
 	"github.com/libopenstorage/operator/pkg/controller/storagenode"
 	_ "github.com/libopenstorage/operator/pkg/log"
 	"github.com/libopenstorage/operator/pkg/migration"
 	"github.com/libopenstorage/operator/pkg/operator-sdk/metrics"
+	testutil "github.com/libopenstorage/operator/pkg/util/test"
 	"github.com/libopenstorage/operator/pkg/version"
+	"k8s.io/client-go/tools/record"
+
+	"k8s.io/apimachinery/pkg/runtime"
+
 	ocp_configv1 "github.com/openshift/api/config/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	log "github.com/sirupsen/logrus"
@@ -113,7 +119,17 @@ func run(c *cli.Context) {
 		log.Fatalf("Error getting Storage driver %v: %v", driverName, err)
 	}
 
-	storageClusterController := storagecluster.Controller{Driver: d}
+	dryRunClient := testutil.FakeK8sClient()
+	dryRunDriver, err := storage.Get(util.DryRunDriverName)
+	if err != nil {
+		log.Fatalf("Error getting dry-run Storage driver %v: %v", driverName, err)
+	}
+
+	storageClusterController := storagecluster.Controller{
+		Driver:       d,
+		DryRunDriver: dryRunDriver,
+		DryRunClient: dryRunClient,
+	}
 	err = storageClusterController.RegisterCRD()
 	if err != nil {
 		log.Fatalf("Error registering CRD's for StorageCluster controller: %v", err)
@@ -175,6 +191,10 @@ func run(c *cli.Context) {
 
 	if err = d.Init(mgr.GetClient(), mgr.GetScheme(), mgr.GetEventRecorderFor(storagecluster.ControllerName)); err != nil {
 		log.Fatalf("Error initializing Storage driver %v: %v", driverName, err)
+	}
+
+	if err = dryRunDriver.Init(dryRunClient, runtime.NewScheme(), record.NewFakeRecorder(0)); err != nil {
+		log.Fatalf("Error initializing Storage driver for dry run %v: %v", driverName, err)
 	}
 
 	// init and start controllers

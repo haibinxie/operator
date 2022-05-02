@@ -1039,7 +1039,20 @@ func essentialsArgPresent(args string) bool {
 }
 
 func init() {
+	initInternal()
+}
+
+// InitForDryRun initialize for dry-run
+func InitForDryRun() {
+	initInternal()
+}
+
+func initInternal() {
 	if err := storage.Register(pxutil.DriverName, &portworx{}); err != nil {
 		logrus.Panicf("Error registering portworx storage driver: %v", err)
+	}
+
+	if err := storage.Register(pxutil.DryRunDriverName, &portworx{}); err != nil {
+		logrus.Panicf("Error registering portworx storage driver for dry run: %v", err)
 	}
 }

@@ -13,16 +13,22 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	k8sversion "k8s.io/apimachinery/pkg/version"
-	fakediscovery "k8s.io/client-go/discovery/fake"
-	fakek8sclient "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 
+	k8sversion "k8s.io/apimachinery/pkg/version"
+
+	"github.com/libopenstorage/operator/drivers/storage"
+	"github.com/libopenstorage/operator/drivers/storage/portworx"
 	"github.com/libopenstorage/operator/drivers/storage/portworx/manifest"
 	"github.com/libopenstorage/operator/drivers/storage/portworx/mock"
 	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
+	"github.com/libopenstorage/operator/pkg/client/clientset/versioned/scheme"
 	"github.com/libopenstorage/operator/pkg/controller/storagecluster"
 	testutil "github.com/libopenstorage/operator/pkg/util/test"
+
+	fakediscovery "k8s.io/client-go/discovery/fake"
+
+	fakek8sclient "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestDryRun(t *testing.T) {
@@ -62,13 +68,27 @@ func TestDryRun(t *testing.T) {
 		},
 	}
 
+	versionClient := fakek8sclient.NewSimpleClientset()
+	coreops.SetInstance(coreops.New(versionClient))
+	versionClient.Discovery().(*fakediscovery.FakeDiscovery).FakedServerVersion = &k8sversion.Info{
+		GitVersion: "v1.16.0",
+	}
+
+	portworx.InitForDryRun()
 	k8sClient := testutil.FakeK8sClient(ds)
 	mockController := gomock.NewController(t)
-	driver := testutil.MockDriver(mockController)
-	ctrl := &storagecluster.Controller{
-		Driver: driver,
-	}
 	recorder := record.NewFakeRecorder(10)
+	driver := testutil.MockDriver(mockController)
+	dryRunDriver, err := storage.Get(pxutil.DryRunDriverName)
+	require.NoError(t, err)
+	dryRunDriver.Init(k8sClient, scheme.Scheme, recorder)
+	require.NoError(t, err)
+	ctrl := &storagecluster.Controller{
+		Driver:       driver,
+		DryRunClient: k8sClient,
+		DryRunDriver: dryRunDriver,
+	}
+
 	ctrl.SetEventRecorder(recorder)
 	ctrl.SetKubernetesClient(k8sClient)
 	mockManifest := mock.NewMockManifest(mockController)
@@ -85,17 +105,14 @@ func TestDryRun(t *testing.T) {
 	driver.EXPECT().GetSelectorLabels().Return(nil).AnyTimes()
 	driver.EXPECT().SetDefaultsOnStorageCluster(gomock.Any()).AnyTimes()
 	driver.EXPECT().String().Return("mock-driver").AnyTimes()
-	versionClient := fakek8sclient.NewSimpleClientset()
-	coreops.SetInstance(coreops.New(versionClient))
-	versionClient.Discovery().(*fakediscovery.FakeDiscovery).FakedServerVersion = &k8sversion.Info{
-		GitVersion: "v1.16.0",
-	}
 
 	migrator := New(ctrl)
 	go migrator.Start()
 
-	err := wait.PollImmediate(time.Millisecond*200, time.Second*5, func() (bool, error) {
-		if strings.Contains(reflect.ValueOf(<-recorder.Events).String(), "Spec validation failed") {
+	err = wait.PollImmediate(time.Millisecond*200, time.Second*5, func() (bool, error) {
+		str := reflect.ValueOf(<-recorder.Events).String()
+		if //strings.Contains(str, "Spec validation failed") &&
+		strings.Contains(str, "Component validation succeeded") {
 			return true, nil
 		}
 

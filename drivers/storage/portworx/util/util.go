@@ -35,6 +35,8 @@ import (
 const (
 	// DriverName name of the portworx driver
 	DriverName = "portworx"
+	// DryRunDriverName name of the portworx driver for dry run
+	DryRunDriverName = "dryRunPortworx"
 	// DefaultStartPort is the default start port for Portworx
 	DefaultStartPort = 9001
 	// DefaultOpenshiftStartPort is the default start port for Portworx on OpenShift

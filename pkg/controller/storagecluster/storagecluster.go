@@ -99,6 +99,8 @@ type Controller struct {
 	podControl                    k8scontroller.PodControlInterface
 	crControl                     k8scontroller.ControllerRevisionControlInterface
 	Driver                        storage.Driver
+	DryRunDriver                  storage.Driver
+	DryRunClient                  client.Client
 	kubernetesVersion             *version.Version
 	isStorkDeploymentCreated      bool
 	isStorkSchedDeploymentCreated bool

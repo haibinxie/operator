@@ -2,11 +2,8 @@ package component
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/hashicorp/go-version"
-	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
-	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 	apiextensionsops "github.com/portworx/sched-ops/k8s/apiextensions"
 	"github.com/sirupsen/logrus"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -16,6 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	pxutil "github.com/libopenstorage/operator/drivers/storage/portworx/util"
+	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 )
 
 const (
@@ -134,7 +134,8 @@ func createAndValidateVPSCRD() error {
 		return err
 	}
 
-	return apiextensionsops.Instance().ValidateCRD(crdName, 1*time.Minute, 5*time.Second)
+	return nil
+	//return apiextensionsops.Instance().ValidateCRD(crdName, 1*time.Minute, 5*time.Second)
 }
 
 func createAndValidateVPSDeprecatedCRD() error {
@@ -175,7 +176,8 @@ func createAndValidateVPSDeprecatedCRD() error {
 		return err
 	}
 
-	return apiextensionsops.Instance().ValidateCRDV1beta1(resource, 1*time.Minute, 5*time.Second)
+	return nil
+	//return apiextensionsops.Instance().ValidateCRDV1beta1(resource, 1*time.Minute, 5*time.Second)
 }
 
 // RegisterPortworxCRDComponent registers the Portworx CRD component

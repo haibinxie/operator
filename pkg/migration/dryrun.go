@@ -1,18 +1,29 @@
 package migration
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 
+	"github.com/golang/mock/gomock"
 	"github.com/hashicorp/go-version"
-
-	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
-	"github.com/libopenstorage/operator/pkg/util"
-	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
+	"github.com/portworx/sched-ops/k8s/apiextensions"
+	coreops "github.com/portworx/sched-ops/k8s/core"
+	"github.com/sirupsen/logrus"
+	fakeextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+
+	fakek8sclient "k8s.io/client-go/kubernetes/fake"
+
+	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
+	"github.com/libopenstorage/operator/pkg/mock"
+	"github.com/libopenstorage/operator/pkg/util"
+	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 )
 
 func (h *Handler) dryRun(cluster *corev1.StorageCluster, ds *appsv1.DaemonSet) error {
@@ -29,15 +40,69 @@ func (h *Handler) dryRun(cluster *corev1.StorageCluster, ds *appsv1.DaemonSet) e
 		return fmt.Errorf("unsupported k8s version %v, please upgrade k8s to %s+ before migration", k8sVersion, minVer)
 	}
 
+	var failed bool
 	// We don't block migration if difference is found in spec. Instead
 	// raise an event and let user review before approving migration.
 	if err := h.validateSpec(cluster, ds); err != nil {
 		k8sutil.WarningEvent(h.ctrl.GetEventRecorder(), cluster, util.MigrationDryRunFailedReason,
 			fmt.Sprintf("Spec validation failed: %v", err))
+		failed = true
+	}
+
+	if err := h.validateComponents(cluster); err != nil {
+		k8sutil.WarningEvent(h.ctrl.GetEventRecorder(), cluster, util.MigrationDryRunFailedReason,
+			fmt.Sprintf("Component validation failed: %v", err))
+		failed = true
 	} else {
+		k8sutil.InfoEvent(h.ctrl.GetEventRecorder(), cluster, util.MigrationDryRunFailedReason,
+			"Component validation succeeded")
+		failed = true
+	}
+
+	if !failed {
 		k8sutil.InfoEvent(h.ctrl.GetEventRecorder(), cluster, util.MigrationDryRunCompletedReason,
 			"Dry run completed successfully")
 	}
+
+	return nil
+}
+
+func (h *Handler) validateComponents(cluster *corev1.StorageCluster) error {
+	apiextensions.SetInstance(apiextensions.New(fakeextclient.NewSimpleClientset()))
+	coreops.SetInstance(coreops.New(fakek8sclient.NewSimpleClientset()))
+	defer apiextensions.SetInstance(nil)
+	defer coreops.SetInstance(nil)
+
+	mockCtrl := gomock.NewController(nil)
+	defer mockCtrl.Finish()
+
+	mockNodeServer := mock.NewMockOpenStorageNodeServer(mockCtrl)
+	sdkServerIP := "127.0.0.1"
+	sdkServerPort := 21883
+	mockSdk := mock.NewSdkServer(mock.SdkServers{
+		Node: mockNodeServer,
+	})
+	mockSdk.StartOnAddress(sdkServerIP, strconv.Itoa(sdkServerPort))
+	defer mockSdk.Stop()
+
+	var err error
+	err = h.ctrl.DryRunDriver.PreInstall(cluster)
+	if err != nil {
+		return err
+	}
+
+	serviceList := &v1.ServiceList{}
+	err = h.ctrl.DryRunClient.List(
+		context.TODO(),
+		serviceList,
+		&client.ListOptions{
+			Namespace: cluster.Namespace,
+		})
+	if err != nil {
+		return err
+	}
+
+	logrus.Infof("found services %+v\n", serviceList)
 
 	return nil
 }
