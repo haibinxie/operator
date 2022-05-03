@@ -107,9 +107,9 @@ func run(c *cli.Context) {
 	}
 
 	config, err := rest.InClusterConfig()
-	if err != nil {
-		log.Fatalf("Error getting cluster config: %v", err)
-	}
+	//if err != nil {
+	//	log.Fatalf("Error getting cluster config: %v", err)
+	//}
 
 	// Register CRDs
 	log.Info("Registering components")
@@ -122,7 +122,7 @@ func run(c *cli.Context) {
 	dryRunClient := testutil.FakeK8sClient()
 	dryRunDriver, err := storage.Get(util.DryRunDriverName)
 	if err != nil {
-		log.Fatalf("Error getting dry-run Storage driver %v: %v", driverName, err)
+		log.Fatalf("Error getting dry-run Storage driver: %v", err)
 	}
 
 	storageClusterController := storagecluster.Controller{
@@ -193,8 +193,8 @@ func run(c *cli.Context) {
 		log.Fatalf("Error initializing Storage driver %v: %v", driverName, err)
 	}
 
-	if err = dryRunDriver.Init(dryRunClient, runtime.NewScheme(), record.NewFakeRecorder(0)); err != nil {
-		log.Fatalf("Error initializing Storage driver for dry run %v: %v", driverName, err)
+	if err = dryRunDriver.Init(dryRunClient, runtime.NewScheme(), record.NewFakeRecorder(100)); err != nil {
+		log.Fatalf("Error initializing Storage driver for dry run: %v", err)
 	}
 
 	// init and start controllers
