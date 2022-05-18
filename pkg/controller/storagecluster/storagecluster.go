@@ -194,6 +194,12 @@ func (c *Controller) SetKubernetesClient(client client.Client) {
 	c.client = client
 }
 
+// SetPodControl sets the pod control to be used by the controller.
+// This method is only used for testing.
+func (c *Controller) SetPodControl(podControl k8scontroller.PodControlInterface) {
+	c.podControl = podControl
+}
+
 // GetEventRecorder returns the event recorder.
 func (c *Controller) GetEventRecorder() record.EventRecorder {
 	return c.recorder
@@ -527,7 +533,7 @@ func (c *Controller) syncStorageCluster(
 	}
 
 	// Set defaults in the storage cluster object if not set
-	if err := c.setStorageClusterDefaults(cluster); err != nil {
+	if err := c.SetStorageClusterDefaults(cluster); err != nil {
 		return fmt.Errorf("failed to update StorageCluster %v/%v with default values: %v",
 			cluster.Namespace, cluster.Name, err)
 	}
@@ -1107,7 +1113,8 @@ func (c *Controller) CreatePodTemplate(
 	return newTemplate, nil
 }
 
-func (c *Controller) setStorageClusterDefaults(cluster *corev1.StorageCluster) error {
+// SetStorageClusterDefaults sets default values on storage cluster.
+func (c *Controller) SetStorageClusterDefaults(cluster *corev1.StorageCluster) error {
 	toUpdate := cluster.DeepCopy()
 
 	updateStrategy := &toUpdate.Spec.UpdateStrategy

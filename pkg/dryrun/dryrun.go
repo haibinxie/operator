@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	goversion "github.com/hashicorp/go-version"
+	"github.com/libopenstorage/openstorage/api"
 	ocp_configv1 "github.com/openshift/api/config/v1"
 	"github.com/portworx/sched-ops/k8s/apiextensions"
 	coreops "github.com/portworx/sched-ops/k8s/core"
@@ -23,10 +26,10 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	fakeextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
-	"k8s.io/apimachinery/pkg/api/resource"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakek8sclient "k8s.io/client-go/kubernetes/fake"
@@ -41,6 +44,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
+
+	"k8s.io/apimachinery/pkg/types"
+
+	k8scontroller "k8s.io/kubernetes/pkg/controller"
 
 	"github.com/libopenstorage/operator/drivers/storage"
 	"github.com/libopenstorage/operator/drivers/storage/portworx/component"
@@ -61,17 +68,17 @@ const (
 )
 
 var (
-	skipComponents = map[string]bool{
-		// CRD component registration is stuck at CRD validation as fake client does not set status of CRD.
-		// Potential fixes:
-		//   1. remove the validation -- need more tests to see if it's safe to remove it.
-		//   2. create a thread to monitor the CRD and update status for dry run.
-		component.PortworxCRDComponentName: true,
-		// Disruption budget component needs to talk to portworx SDK,
-		// it also needs px to be deployed before it can get correct disruption budget, however
-		// dry run is before px being deployed.
-		component.DisruptionBudgetComponentName: true,
-	}
+	//skipComponents = map[string]bool{
+	//	// CRD component registration is stuck at CRD validation as fake client does not set status of CRD.
+	//	// Potential fixes:
+	//	//   1. remove the validation -- need more tests to see if it's safe to remove it.
+	//	//   2. create a thread to monitor the CRD and update status for dry run.
+	//	component.PortworxCRDComponentName: true,
+	//	// Disruption budget component needs to talk to portworx SDK,
+	//	// it also needs px to be deployed before it can get correct disruption budget, however
+	//	// dry run is before px being deployed.
+	//	component.DisruptionBudgetComponentName: true,
+	//}
 
 	skipObjectKinds = map[string]bool{
 		"Namespace":          true,
@@ -174,6 +181,7 @@ func (d *DryRun) Init(kubeconfig, outputFolder, storageClusterFile string) error
 		logrus.WithError(err).Fatal("failed to initialize controller")
 	}
 	d.mockController.SetKubernetesClient(d.mockClient)
+	d.mockController.SetPodControl(&k8scontroller.FakePodControl{})
 
 	if outputFolder != "" {
 		d.outputFolder = outputFolder
@@ -187,27 +195,77 @@ func (d *DryRun) Init(kubeconfig, outputFolder, storageClusterFile string) error
 	d.cluster.Annotations[constants.AnnotationMigrationApproved] = "true"
 	d.cluster.Annotations[constants.AnnotationPauseComponentMigration] = "false"
 	d.cluster.Status.Phase = constants.PhaseMigrationInProgress
-	// Disable storage due to the driver will talk to portworx SDK to get storage node information.
-	// However dryrun is before installation so there won't be useful information.
-	// It will also disable PDB.
-	// We will generate portworx pod spec by calling the API directly.
-	d.cluster.Annotations[constants.AnnotationDisableStorage] = "true"
+	// Disruption budget needs to talk to px SDK, hence not supported yet.
+	d.cluster.Annotations[pxutil.AnnotationPodDisruptionBudget] = "false"
 	// Make a fake cluster ID as metrics collector waits for the UID before deploying.
 	d.cluster.Status.ClusterUID = uuid.New().String()
+
+	if err = d.mockPortworxSDKServer(mockCtrl); err != nil {
+		logrus.WithError(err).Fatal("failed to mock portworx SDK")
+	}
+
+	return nil
+}
+
+func (d *DryRun) mockPortworxSDKServer(controller *gomock.Controller) error {
+	mockNodeServer := mock.NewMockOpenStorageNodeServer(controller)
+	mockClusterServer := mock.NewMockOpenStorageClusterServer(controller)
+
+	// Start a sdk server that implements the mock servers
+	sdkServerIP := "127.0.0.1"
+	sdkServerPort := 9020
+	mockSdk := mock.NewSdkServer(mock.SdkServers{
+		Node:    mockNodeServer,
+		Cluster: mockClusterServer,
+	})
+	mockSdk.StartOnAddress(sdkServerIP, strconv.Itoa(sdkServerPort))
+
+	mockNodeServer.EXPECT().
+		EnumerateWithFilters(gomock.Any(), &api.SdkNodeEnumerateWithFiltersRequest{}).
+		Return(&api.SdkNodeEnumerateWithFiltersResponse{}, nil).
+		AnyTimes()
+
+	expectedClusterResp := &api.SdkClusterInspectCurrentResponse{
+		Cluster: &api.StorageCluster{
+			Id:   "cluster-id",
+			Name: "cluster-name",
+		},
+	}
+	mockClusterServer.EXPECT().
+		InspectCurrent(gomock.Any(), &api.SdkClusterInspectCurrentRequest{}).
+		Return(expectedClusterResp, nil).
+		Times(1)
+
+	// Create fake k8s client with fake service that points to the mock sdk server address
+	svc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pxutil.PortworxServiceName,
+			Namespace: d.cluster.Namespace,
+		},
+		Spec: v1.ServiceSpec{
+			ClusterIP: sdkServerIP,
+			Ports: []v1.ServicePort{
+				{
+					Name: pxutil.PortworxSDKPortName,
+					Port: int32(sdkServerPort),
+				},
+			},
+		},
+	}
+
+	if err := d.mockClient.Create(context.TODO(), svc); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 // Execute dry run for portworx installation
 func (d *DryRun) Execute() error {
-	err := d.mockClient.Create(context.TODO(), d.cluster)
-	if err != nil {
-		return err
-	}
-
-	if err = d.simulateK8sNode(); err != nil {
-		return err
-	}
+	var err error
+	//if err = d.simulateK8sNode(); err != nil {
+	//	return err
+	//}
 
 	if err = d.installAllComponents(); err != nil {
 		return err
@@ -242,7 +300,7 @@ func (d *DryRun) Execute() error {
 			if err == nil {
 				logrus.Info("Operator migration dry-run finished successfully")
 			} else {
-				logrus.Warning("Please review the warning/error messages and/or refer to the troubleshooting guide")
+				logrus.Warning("Please review the warning/error messages prior to approving the migration")
 			}
 		} else {
 			logrus.Infof("could not find DaemonSet portworx, will not dry run daemonset to operator migration")
@@ -299,6 +357,40 @@ func (d *DryRun) writeFiles(objs []client.Object) error {
 	return nil
 }
 
+// Update CRD status as portworx CRDs component installation waits for it.
+func (d *DryRun) updatePortworxCRDStatus() error {
+	err := wait.PollImmediate(time.Second, time.Second*30, func() (bool, error) {
+		crd, err := apiextensions.Instance().GetCRD("volumeplacementstrategies.portworx.io", metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			logrus.Debugf("waiting for VPS CRD")
+			return false, nil
+		} else if err != nil {
+			return true, err
+		}
+
+		crd.Status = apiextensionsv1.CustomResourceDefinitionStatus{
+			Conditions: []apiextensionsv1.CustomResourceDefinitionCondition{
+				{
+					Type:   apiextensionsv1.Established,
+					Status: apiextensionsv1.ConditionTrue,
+				},
+			},
+		}
+		if _, err := apiextensions.Instance().UpdateCRD(crd); err != nil {
+			return true, err
+		}
+
+		logrus.Debugf("Updated status of VPS CRD")
+		return true, nil
+	})
+
+	if err != nil {
+		logrus.Warningf("failed to update portworx CRD status: %v", err)
+		return err
+	}
+	return nil
+}
+
 func (d *DryRun) installAllComponents() error {
 	// Create a secret for alert manager so installation can proceed
 	err := d.mockClient.Create(
@@ -313,6 +405,21 @@ func (d *DryRun) installAllComponents() error {
 		logrus.WithError(err).Error("failed to create mock secret for alertManager")
 	}
 
+	// Required by updateStorageNodes in UpdateStorageClusterStatus during controller reconcile.
+	if d.cluster.Spec.Kvdb != nil && d.cluster.Spec.Kvdb.Internal {
+		strippedClusterName := strings.ToLower(regexp.MustCompile("[^a-zA-Z0-9]+").ReplaceAllString(d.cluster.Name, ""))
+		cmName := fmt.Sprintf("px-bootstrap-%s", strippedClusterName)
+		etcdConfigMap := &v1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: "kube-system",
+			},
+		}
+		if err = d.mockClient.Create(context.TODO(), etcdConfigMap); err != nil {
+			logrus.WithError(err).Error("failed to create mock etcd configmap")
+		}
+	}
+
 	funcGetDir := func() string {
 		ex, err := os.Executable()
 		if err != nil {
@@ -324,6 +431,17 @@ func (d *DryRun) installAllComponents() error {
 	}
 	pxutil.SpecsBaseDir = funcGetDir
 
+	go d.updatePortworxCRDStatus()
+
+	//if err = d.mockController.SetStorageClusterDefaults(d.cluster); err != nil {
+	//	return err
+	//}
+	//
+	//cluster := d.cluster.DeepCopy()
+	//cluster.Annotations[constants.AnnotationDisableStorage] = "true"
+	if err = d.mockClient.Create(context.TODO(), d.cluster); err != nil {
+		return err
+	}
 	_, err = d.mockController.Reconcile(
 		context.TODO(),
 		reconcile.Request{
@@ -335,86 +453,87 @@ func (d *DryRun) installAllComponents() error {
 	if err != nil {
 		return err
 	}
+	//
+	//// Update the storage cluster after reconcile, which is updated with default values.
+	//err = d.mockClient.Get(context.TODO(),
+	//	types.NamespacedName{
+	//		Name:      d.cluster.Name,
+	//		Namespace: d.cluster.Namespace,
+	//	},
+	//	d.cluster)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//// We need to reconcile all components again with portworx enabled.
+	//// Although it's done in controller reconcile, portworx was disabled to avoid calling to portworx SDKs,
+	////and many components are disabled when portworx is disabled.
+	//d.cluster.Annotations[constants.AnnotationDisableStorage] = "false"
 
-	// Update the storage cluster after reconcile, which is updated with default values.
-	err = d.mockClient.Get(context.TODO(),
-		types.NamespacedName{
-			Name:      d.cluster.Name,
-			Namespace: d.cluster.Namespace,
-		},
-		d.cluster)
-	if err != nil {
-		return err
-	}
-
-	// We need to reconcile all components again with portworx enabled.
-	// Although it's done in controller reconcile, portworx was disabled to avoid calling to portworx SDKs,
-	//and many components are disabled when portworx is disabled.
-	d.cluster.Annotations[constants.AnnotationDisableStorage] = "false"
-
-	for _, comp := range component.GetAll() {
-		enabled := comp.IsEnabled(d.cluster)
-		if skipComponents[comp.Name()] {
-			// Only log a warning if component is enabled but not supported.
-			if enabled {
-				logrus.Debugf("component \"%s\": dry run is not supported yet, component enabled: %t.", comp.Name(), enabled)
-			}
-			continue
-		}
-
-		logrus.Debugf("component \"%s\" enabled: %t", comp.Name(), enabled)
-		if enabled {
-			err := comp.Reconcile(d.cluster)
-			if ce, ok := err.(*component.Error); ok &&
-				ce.Code() == component.ErrCritical {
-				return err
-			} else if err != nil {
-				logrus.Errorf("Failed to setup %s. %v", comp.Name(), err)
-			}
-		} else {
-			if err := comp.Delete(d.cluster); err != nil {
-				logrus.Errorf("Failed to cleanup %v. %v", comp.Name(), err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (d *DryRun) simulateK8sNode() error {
-	if d.realClient == nil {
-		node := &v1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   "mockNode",
-				Labels: make(map[string]string),
-			},
-			Status: v1.NodeStatus{
-				Allocatable: map[v1.ResourceName]resource.Quantity{
-					v1.ResourcePods: resource.MustParse(strconv.Itoa(1)),
-				},
-			},
-		}
-		if err := d.mockClient.Create(context.TODO(), node); err != nil {
-			return err
-		}
-	} else {
-		nodeList := &v1.NodeList{}
-		err := d.realClient.List(context.TODO(), nodeList)
-		if err != nil || nodeList == nil || len(nodeList.Items) == 0 {
-			return fmt.Errorf("failed to get real k8s node, err %v, nodeList %+v", err, nodeList)
-		}
-
-		for _, node := range nodeList.Items {
-			d.cleanupObject(&node)
-			err = d.mockClient.Create(context.TODO(), &node)
-			if err != nil {
-				return err
-			}
-		}
-	}
+	//for _, comp := range component.GetAll() {
+	//	enabled := comp.IsEnabled(d.cluster)
+	//	//if skipComponents[comp.Name()] {
+	//	//	// Only log a warning if component is enabled but not supported.
+	//	//	if enabled {
+	//	//		logrus.Debugf("component \"%s\": dry run is not supported yet, component enabled: %t.", comp.Name(), enabled)
+	//	//	}
+	//	//	continue
+	//	//}
+	//
+	//	logrus.Debugf("component \"%s\" enabled: %t", comp.Name(), enabled)
+	//	if enabled {
+	//		err := comp.Reconcile(d.cluster)
+	//		if ce, ok := err.(*component.Error); ok &&
+	//			ce.Code() == component.ErrCritical {
+	//			return err
+	//		} else if err != nil {
+	//			logrus.Errorf("Failed to setup %s. %v", comp.Name(), err)
+	//		}
+	//	} else {
+	//		if err := comp.Delete(d.cluster); err != nil {
+	//			logrus.Errorf("Failed to cleanup %v. %v", comp.Name(), err)
+	//		}
+	//	}
+	//}
 
 	return nil
 }
+
+//
+//func (d *DryRun) simulateK8sNode() error {
+//	if d.realClient == nil {
+//		node := &v1.Node{
+//			ObjectMeta: metav1.ObjectMeta{
+//				Name:   "mockNode",
+//				Labels: make(map[string]string),
+//			},
+//			Status: v1.NodeStatus{
+//				Allocatable: map[v1.ResourceName]resource.Quantity{
+//					v1.ResourcePods: resource.MustParse(strconv.Itoa(1)),
+//				},
+//			},
+//		}
+//		if err := d.mockClient.Create(context.TODO(), node); err != nil {
+//			return err
+//		}
+//	} else {
+//		nodeList := &v1.NodeList{}
+//		err := d.realClient.List(context.TODO(), nodeList)
+//		if err != nil || nodeList == nil || len(nodeList.Items) == 0 {
+//			return fmt.Errorf("failed to get real k8s node, err %v, nodeList %+v", err, nodeList)
+//		}
+//
+//		for _, node := range nodeList.Items {
+//			d.cleanupObject(&node)
+//			err = d.mockClient.Create(context.TODO(), &node)
+//			if err != nil {
+//				return err
+//			}
+//		}
+//	}
+//
+//	return nil
+//}
 
 func (d *DryRun) cleanupObject(obj client.Object) error {
 	obj.SetGenerateName("")

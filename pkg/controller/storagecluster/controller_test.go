@@ -758,7 +758,7 @@ func TestCloudStorageLabelSelector(t *testing.T) {
 	// Node pool label get set by default
 	driver.EXPECT().SetDefaultsOnStorageCluster(gomock.Any())
 	cluster.Spec.CloudStorage.NodePoolLabel = ""
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, cluster.Spec.CloudStorage.NodePoolLabel, "key")
 }
@@ -787,26 +787,26 @@ func TestStorageClusterDefaults(t *testing.T) {
 	driver.EXPECT().SetDefaultsOnStorageCluster(gomock.Any()).AnyTimes()
 
 	// Use default revision history limit if not set
-	err := controller.setStorageClusterDefaults(cluster)
+	err := controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, int32(defaultRevisionHistoryLimit), *cluster.Spec.RevisionHistoryLimit)
 
 	// Don't use default revision history limit if already set
 	revisionHistoryLimit := int32(20)
 	cluster.Spec.RevisionHistoryLimit = &revisionHistoryLimit
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, revisionHistoryLimit, *cluster.Spec.RevisionHistoryLimit)
 
 	// Use default image pull policy if not set
 	cluster.Spec.ImagePullPolicy = ""
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, v1.PullAlways, cluster.Spec.ImagePullPolicy)
 
 	// Don't use default image pull policy if already set
 	cluster.Spec.ImagePullPolicy = v1.PullNever
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, v1.PullNever, cluster.Spec.ImagePullPolicy)
 }
@@ -833,7 +833,7 @@ func TestStorageClusterDefaultsForUpdateStrategy(t *testing.T) {
 	driver.EXPECT().SetDefaultsOnStorageCluster(gomock.Any()).AnyTimes()
 
 	// Use rolling update as default update strategy if nothing specified
-	err := controller.setStorageClusterDefaults(cluster)
+	err := controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, corev1.RollingUpdateStorageClusterStrategyType, cluster.Spec.UpdateStrategy.Type)
 	require.Equal(t, 1, cluster.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.IntValue())
@@ -842,7 +842,7 @@ func TestStorageClusterDefaultsForUpdateStrategy(t *testing.T) {
 	cluster.Spec.UpdateStrategy = corev1.StorageClusterUpdateStrategy{
 		Type: corev1.RollingUpdateStorageClusterStrategyType,
 	}
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, corev1.RollingUpdateStorageClusterStrategyType, cluster.Spec.UpdateStrategy.Type)
 	require.Equal(t, 1, cluster.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.IntValue())
@@ -852,7 +852,7 @@ func TestStorageClusterDefaultsForUpdateStrategy(t *testing.T) {
 		Type:          corev1.RollingUpdateStorageClusterStrategyType,
 		RollingUpdate: &corev1.RollingUpdateStorageCluster{},
 	}
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, corev1.RollingUpdateStorageClusterStrategyType, cluster.Spec.UpdateStrategy.Type)
 	require.Equal(t, 1, cluster.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.IntValue())
@@ -865,7 +865,7 @@ func TestStorageClusterDefaultsForUpdateStrategy(t *testing.T) {
 			MaxUnavailable: &maxUnavailable,
 		},
 	}
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, corev1.RollingUpdateStorageClusterStrategyType, cluster.Spec.UpdateStrategy.Type)
 	require.Equal(t, "20%", cluster.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.String())
@@ -874,7 +874,7 @@ func TestStorageClusterDefaultsForUpdateStrategy(t *testing.T) {
 	cluster.Spec.UpdateStrategy = corev1.StorageClusterUpdateStrategy{
 		Type: corev1.OnDeleteStorageClusterStrategyType,
 	}
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, corev1.OnDeleteStorageClusterStrategyType, cluster.Spec.UpdateStrategy.Type)
 	require.Nil(t, cluster.Spec.UpdateStrategy.RollingUpdate)
@@ -903,21 +903,21 @@ func TestStorageClusterDefaultsForFinalizer(t *testing.T) {
 
 	// Add delete finalizer if no finalizers are present
 	expectedFinalizers := []string{deleteFinalizerName}
-	err := controller.setStorageClusterDefaults(cluster)
+	err := controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, expectedFinalizers, cluster.Finalizers)
 
 	// Add delete finalizer if it is not present
 	cluster.Finalizers = []string{"foo", "bar"}
 	expectedFinalizers = []string{"foo", "bar", deleteFinalizerName}
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, expectedFinalizers, cluster.Finalizers)
 
 	// Do not add delete finalizer if already present
 	expectedFinalizers = []string{"foo", deleteFinalizerName, "bar"}
 	cluster.Finalizers = []string{"foo", deleteFinalizerName, "bar"}
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 	require.Equal(t, expectedFinalizers, cluster.Finalizers)
 }
@@ -957,7 +957,7 @@ func TestStorageClusterDefaultsWithDriverOverrides(t *testing.T) {
 		})
 
 	// The default values from from the storage driver should take precendence
-	err := controller.setStorageClusterDefaults(cluster)
+	err := controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 
 	require.Equal(t, "test/image:1.2.3", cluster.Spec.Image)
@@ -975,7 +975,7 @@ func TestStorageClusterDefaultsWithDriverOverrides(t *testing.T) {
 			cluster.Status.Version = "1.2.3"
 		})
 
-	err = controller.setStorageClusterDefaults(cluster)
+	err = controller.SetStorageClusterDefaults(cluster)
 	require.NoError(t, err)
 
 	require.Equal(t, "1.2.3", cluster.Status.Version)
