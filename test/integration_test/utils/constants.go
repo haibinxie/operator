@@ -61,28 +61,28 @@ const (
 	// DefaultValidateDeployTimeout is a default timeout for deployment validation
 	DefaultValidateDeployTimeout = 15 * time.Minute
 	// DefaultValidateDeployRetryInterval is a default retry interval for deployment validation
-	DefaultValidateDeployRetryInterval = 20 * time.Second
+	DefaultValidateDeployRetryInterval = 2 * time.Second
 	// DefaultValidateUpgradeTimeout is a default timeout for upgrade validation
 	DefaultValidateUpgradeTimeout = 30 * time.Minute
 	// DefaultValidateUpgradeRetryInterval is a default retry interval for upgrade validation
-	DefaultValidateUpgradeRetryInterval = 30 * time.Second
+	DefaultValidateUpgradeRetryInterval = 2 * time.Second
 	// DefaultValidateUpdateTimeout is a default timeout for update validation
 	DefaultValidateUpdateTimeout = 20 * time.Minute
 	// DefaultValidateUpdateRetryInterval is a default retry interval for update validation
-	DefaultValidateUpdateRetryInterval = 20 * time.Second
+	DefaultValidateUpdateRetryInterval = 2 * time.Second
 	// DefaultValidateUninstallTimeout is a default timeout for uninstall validation
 	DefaultValidateUninstallTimeout = 15 * time.Minute
 	// DefaultValidateUninstallRetryInterval is a default retry interval for uninstall validation
-	DefaultValidateUninstallRetryInterval = 20 * time.Second
+	DefaultValidateUninstallRetryInterval = 2 * time.Second
 
 	// DefaultValidateComponentTimeout is a default timeout for component validation
 	DefaultValidateComponentTimeout = 10 * time.Minute
 	// DefaultValidateComponentRetryInterval is a default retry interval for component validation
-	DefaultValidateComponentRetryInterval = 5 * time.Second
+	DefaultValidateComponentRetryInterval = 2 * time.Second
 	// DefaultValidateApplicationTimeout is a default timeout for component validation
 	DefaultValidateApplicationTimeout = 5 * time.Minute
 	// DefaultValidateApplicationRetryInterval is a default retry interval for component validation
-	DefaultValidateApplicationRetryInterval = 5 * time.Second
+	DefaultValidateApplicationRetryInterval = 2 * time.Second
 
 	// LabelValueTrue value "true" for a label
 	LabelValueTrue = "true"

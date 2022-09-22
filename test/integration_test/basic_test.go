@@ -22,7 +22,6 @@ import (
 	testutil "github.com/libopenstorage/operator/pkg/util/test"
 	"github.com/libopenstorage/operator/test/integration_test/types"
 	ci_utils "github.com/libopenstorage/operator/test/integration_test/utils"
-	appsops "github.com/portworx/sched-ops/k8s/apps"
 	coreops "github.com/portworx/sched-ops/k8s/core"
 	"github.com/portworx/sched-ops/k8s/operator"
 )
@@ -36,14 +35,6 @@ var (
 )
 
 var testStorageClusterBasicCases = []types.TestCase{
-	{
-		TestName:        "InstallWithAllDefaults",
-		TestrailCaseIDs: []string{"C51022", "C50236"},
-		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "simple-install"},
-		}),
-		TestFunc: BasicInstall,
-	},
 	{
 		TestName:        "InstallInCustomNamespaceWithShiftedPortAndAllComponents",
 		TestrailCaseIDs: []string{"C52411", "C52430", "C53572"},
@@ -60,8 +51,8 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestFunc: BasicInstallInCustomNamespace,
 	},
 	{
-		TestName:        "NodeAffinityLabels",
-		TestrailCaseIDs: []string{"C50962"},
+		TestName:        "BasicInstall",
+		TestrailCaseIDs: []string{"C50962", "C51022", "C50236"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "node-affinity-labels"},
 			Spec: corev1.StorageClusterSpec{
@@ -528,11 +519,10 @@ func BasicTelemetryRegression(tc *types.TestCase) func(*testing.T) {
 // 1. Deploy PX with CSI enabled by default and validate CSI components and images
 // 2. Validate CSI is enabled by default and topology spec is empty
 // 3. Delete "portworx" pods and validate they get re-deployed
-// 4. Delete "px-csi-ext" pods and validate they get re-deployed
-// 5. Disable CSI and validate CSI components got successfully removed
-// 6. Enabled CSI and topology and validate CSI components and images
-// 7. Validate CSI snapshot controller is enabled by default on k8s 1.17+, disable and re-enabled it
-// 8. Delete StorageCluster and validate it got successfully removed
+// 4. Disable CSI and validate CSI components got successfully removed
+// 5. Enabled CSI and topology and validate CSI components and images
+// 6. Validate CSI snapshot controller is enabled by default on k8s 1.17+, disable and re-enabled it
+// 7. Delete StorageCluster and validate it got successfully removed
 func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 	return func(t *testing.T) {
 		var err error
@@ -549,12 +539,6 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 
 		logrus.Info("Delete portworx pods and validate they get re-deployed")
 		err = coreops.Instance().DeletePodsByLabels(cluster.Namespace, map[string]string{"name": "portworx"}, 120*time.Second)
-		require.NoError(t, err)
-		err = testutil.ValidateStorageCluster(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateDeployTimeout, ci_utils.DefaultValidateDeployRetryInterval, true, "")
-		require.NoError(t, err)
-
-		logrus.Info("Delete px-csi-ext pods and validate they get re-deployed")
-		err = appsops.Instance().DeleteDeploymentPods("px-csi-ext", cluster.Namespace, 120*time.Second)
 		require.NoError(t, err)
 		err = testutil.ValidateStorageCluster(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateDeployTimeout, ci_utils.DefaultValidateDeployRetryInterval, true, "")
 		require.NoError(t, err)
@@ -631,7 +615,6 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 // 15. Delete StorageCluster and validate it got successfully removed
 func BasicStorkRegression(tc *types.TestCase) func(*testing.T) {
 	return func(t *testing.T) {
-		var err error
 		testSpec := tc.TestSpec(t)
 		cluster, ok := testSpec.(*corev1.StorageCluster)
 		require.True(t, ok)
@@ -647,16 +630,6 @@ func BasicStorkRegression(tc *types.TestCase) func(*testing.T) {
 
 		// Validate HostNetwork is <nil> by default
 		require.Nil(t, cluster.Spec.Stork.HostNetwork, "failed to validate HostNetwork, it should be nil by default, but it is set to %v", cluster.Spec.Stork.HostNetwork)
-
-		logrus.Info("Delete stork pods and validate they get re-deployed")
-		err = appsops.Instance().DeleteDeploymentPods("stork", cluster.Namespace, 120*time.Second)
-		require.NoError(t, err)
-
-		logrus.Info("Delete stork-scheduler pods and validate they get re-deployed")
-		err = appsops.Instance().DeleteDeploymentPods("stork-scheduler", cluster.Namespace, 120*time.Second)
-		require.NoError(t, err)
-		err = testutil.ValidateStorageCluster(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateDeployTimeout, ci_utils.DefaultValidateDeployRetryInterval, true, "")
-		require.NoError(t, err)
 
 		logrus.Info("Enable Stork webhook-controller and validate StorageCluster")
 		// At this point this map should be <nil>
@@ -735,7 +708,6 @@ func BasicStorkRegression(tc *types.TestCase) func(*testing.T) {
 // 6. Delete StorageCluster and validate it got successfully removed
 func BasicAutopilotRegression(tc *types.TestCase) func(*testing.T) {
 	return func(t *testing.T) {
-		var err error
 		testSpec := tc.TestSpec(t)
 		cluster, ok := testSpec.(*corev1.StorageCluster)
 		require.True(t, ok)
@@ -757,12 +729,6 @@ func BasicAutopilotRegression(tc *types.TestCase) func(*testing.T) {
 		cluster = ci_utils.UpdateAndValidateAutopilot(cluster, updateParamFunc, ci_utils.PxSpecImages, t)
 		require.NotNil(t, cluster.Spec.Autopilot, "failed to validate Autopilot block, it should not be nil here, but it is: %+v", cluster.Spec.Autopilot)
 		require.True(t, cluster.Spec.Autopilot.Enabled, "failed to validate Autopilot is enabled: expected: true, actual: %v", cluster.Spec.Autopilot.Enabled)
-
-		logrus.Info("Delete autopilot pod and validate it gets re-deployed")
-		err = appsops.Instance().DeleteDeploymentPods("autopilot", cluster.Namespace, 60*time.Second)
-		require.NoError(t, err)
-		err = testutil.ValidateAutopilot(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateComponentTimeout, ci_utils.DefaultValidateComponentRetryInterval)
-		require.NoError(t, err)
 
 		logrus.Info("Disable Autopilot and validate StorageCluster")
 		updateParamFunc = func(cluster *corev1.StorageCluster) *corev1.StorageCluster {
@@ -798,7 +764,6 @@ func BasicAutopilotRegression(tc *types.TestCase) func(*testing.T) {
 // 9. Delete StorageCluster and validate it got successfully removed
 func BasicPvcControllerRegression(tc *types.TestCase) func(*testing.T) {
 	return func(t *testing.T) {
-		var err error
 		testSpec := tc.TestSpec(t)
 		cluster, ok := testSpec.(*corev1.StorageCluster)
 		require.True(t, ok)
@@ -819,12 +784,6 @@ func BasicPvcControllerRegression(tc *types.TestCase) func(*testing.T) {
 		}
 		cluster = ci_utils.UpdateAndValidatePvcController(cluster, updateParamFunc, ci_utils.PxSpecImages, ci_utils.K8sVersion, t)
 		require.Equal(t, cluster.Annotations["portworx.io/pvc-controller"], "true")
-
-		logrus.Info("Delete portworx-pvc-controller pods and validate it gets re-deployed")
-		err = appsops.Instance().DeleteDeploymentPods("portworx-pvc-controller", cluster.Namespace, 60*time.Second)
-		require.NoError(t, err)
-		err = testutil.ValidatePvcController(ci_utils.PxSpecImages, cluster, ci_utils.K8sVersion, ci_utils.DefaultValidateComponentTimeout, ci_utils.DefaultValidateComponentRetryInterval)
-		require.NoError(t, err)
 
 		logrus.Info("Set PVC Controller custom secure-port in the annotations and validate StorageCluster")
 		updateParamFunc = func(cluster *corev1.StorageCluster) *corev1.StorageCluster {
@@ -969,13 +928,6 @@ func BasicAlertManagerRegression(tc *types.TestCase) func(*testing.T) {
 			return cluster
 		}
 		cluster = ci_utils.UpdateAndValidateMonitoring(cluster, updateParamFunc, ci_utils.PxSpecImages, t)
-		require.NoError(t, err)
-
-		// Delete pods and validate they get redeployed
-		logrus.Info("Delete alertmanager-portworx statefulset pods and validate they gets re-deployed")
-		err = appsops.Instance().DeleteStatefulSetPods("alertmanager-portworx", cluster.Namespace, 60*time.Second)
-		require.NoError(t, err)
-		err = testutil.ValidateMonitoring(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateComponentTimeout, ci_utils.DefaultValidateComponentRetryInterval)
 		require.NoError(t, err)
 
 		// Disable AlertManager and validate
