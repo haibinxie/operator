@@ -43,7 +43,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 			require.NoError(t, err)
 			cluster, ok := objects[0].(*corev1.StorageCluster)
 			require.True(t, ok)
-			cluster.Name = "custom-ns-shifted-port-all-components"
+			cluster.Name = "test-stc"
 			cluster.Namespace = "custom-namespace"
 			cluster.Spec.StartPort = func(val uint32) *uint32 { return &val }(17001)
 			return cluster
@@ -54,7 +54,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicInstall",
 		TestrailCaseIDs: []string{"C50962", "C51022", "C50236"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "node-affinity-labels"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 			Spec: corev1.StorageClusterSpec{
 				Placement: &corev1.PlacementSpec{
 					NodeAffinity: &v1.NodeAffinity{
@@ -82,7 +82,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestrailCaseIDs: []string{"C50241"},
 		TestSpec: func(t *testing.T) interface{} {
 			return &corev1.StorageCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "upgrade-stc-test"},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 			}
 		},
 		ShouldSkip: func(tc *types.TestCase) bool {
@@ -104,7 +104,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 			require.NoError(t, err)
 			cluster, ok := objects[0].(*corev1.StorageCluster)
 			require.True(t, ok)
-			cluster.Name = "upgrade-stc-with-all-components-test"
+			cluster.Name = "test-stc"
 			return cluster
 		},
 		ShouldSkip: func(tc *types.TestCase) bool {
@@ -122,7 +122,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicUpgradeOperator",
 		TestrailCaseIDs: []string{""},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "operator-upgrade-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		ShouldSkip: func(tc *types.TestCase) bool {
 			if len(ci_utils.OperatorUpgradeHopsImageList) == 0 {
@@ -137,7 +137,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicTelemetryRegression",
 		TestrailCaseIDs: []string{"C54888, C83063, C83064, C83160, C83161, C83076, C83077, C83078, C83082, C83162, C83163, C83164, C83165, C54892, C82916, C83083"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "telemetry-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicTelemetryRegression,
 		ShouldSkip: func(tc *types.TestCase) bool {
@@ -148,7 +148,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicCsiRegression",
 		TestrailCaseIDs: []string{"C55919", "C51020", "C51025", "C51026", "C54701", "C54706", "C58194", "C58195", "C60349", "C60350", "C79785", "C79788", "C79789"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "csi-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicCsiRegression,
 	},
@@ -156,7 +156,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicStorkRegression",
 		TestrailCaseIDs: []string{"C57029", "C50244", "C50282", "C51243", "C54704", "C58260", "C54703", "C58259", "C53406", "C58256", "C58257", "C58258", "C53588", "C53628", "C53629", "C58261"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "stork-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicStorkRegression,
 	},
@@ -164,7 +164,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicAutopilotRegression",
 		TestrailCaseIDs: []string{"C57036", "C51237", "C58434", "C58435", "C58433", "C51238", "C58432", "C51245"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "autopilot-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicAutopilotRegression,
 	},
@@ -172,7 +172,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicPvcControllerRegression",
 		TestrailCaseIDs: []string{"C58438", "C54697", "C54698", "C54707", "C58437", "C54476", "C54477"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "pvccontroller-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicPvcControllerRegression,
 	},
@@ -180,7 +180,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicAlertManagerRegression",
 		TestrailCaseIDs: []string{"C57120", "C57683", "C57121", "C57122", "C58871", "C57124"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "alertmanager-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicAlertManagerRegression,
 	},
@@ -188,7 +188,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicKvdbRegression",
 		TestrailCaseIDs: []string{"C52665", "C52667", "C52670", "C50237", "C53582", "C53583", "C53586", "C57011"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "kvdb-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicKvdbRegression,
 	},
@@ -196,7 +196,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "BasicSecurityRegression",
 		TestrailCaseIDs: []string{"C53416", "C53417", "C53423", "C60182", "C60183"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "security-regression-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 		}),
 		TestFunc: BasicSecurityRegression,
 	},
@@ -205,7 +205,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestrailCaseIDs: []string{"C59259", "C59260", "C59261"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "pod-topology-spread-constraints-test",
+				Name: "test-stc",
 				Annotations: map[string]string{
 					"portworx.io/pvc-controller": "true",
 				},
@@ -220,7 +220,7 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestName:        "InstallWithCustomLabels",
 		TestrailCaseIDs: []string{"C59042"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "custom-label-test"},
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
 			Spec: corev1.StorageClusterSpec{
 				Metadata: &corev1.Metadata{
 					Labels: map[string]map[string]string{
