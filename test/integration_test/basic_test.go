@@ -177,6 +177,46 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestFunc: BasicPvcControllerRegression,
 	},
 	{
+		TestName:        "BasicAlertManagerRegression",
+		TestrailCaseIDs: []string{"C57120", "C57683", "C57121", "C57122", "C58871", "C57124"},
+		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "alertmanager-regression-test"},
+		}),
+		TestFunc: BasicAlertManagerRegression,
+	},
+	{
+		TestName:        "BasicKvdbRegression",
+		TestrailCaseIDs: []string{"C52665", "C52667", "C52670", "C50237", "C53582", "C53583", "C53586", "C57011"},
+		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "kvdb-regression-test"},
+		}),
+		TestFunc: BasicKvdbRegression,
+	},
+	{
+		TestName:        "BasicSecurityRegression",
+		TestrailCaseIDs: []string{"C53416", "C53417", "C53423", "C60182", "C60183"},
+		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "security-regression-test"},
+		}),
+		TestFunc: BasicSecurityRegression,
+	},
+	{
+		TestName:        "InstallWithNodeTopologyLabels",
+		TestrailCaseIDs: []string{"C59259", "C59260", "C59261"},
+		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "pod-topology-spread-constraints-test",
+				Annotations: map[string]string{
+					"portworx.io/pvc-controller": "true",
+				},
+			},
+		}),
+		TestFunc: InstallWithNodeTopologyLabels,
+		ShouldSkip: func(tc *types.TestCase) bool {
+			return ci_utils.PxOperatorVersion.LessThan(ci_utils.PxOperatorVer1_8)
+		},
+	},
+	{
 		TestName:        "InstallWithCustomLabels",
 		TestrailCaseIDs: []string{"C59042"},
 		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
@@ -193,46 +233,6 @@ var testStorageClusterBasicCases = []types.TestCase{
 		}),
 
 		TestFunc: InstallWithCustomLabels,
-		ShouldSkip: func(tc *types.TestCase) bool {
-			return ci_utils.PxOperatorVersion.LessThan(ci_utils.PxOperatorVer1_8)
-		},
-	},
-	{
-		TestName:        "BasicAlertManagerRegression",
-		TestrailCaseIDs: []string{"C57120", "C57683", "C57121", "C57122", "C58871", "C57124"},
-		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "alertmanager-regression-test"},
-		}),
-		TestFunc: BasicAlertManagerRegression,
-	},
-	{
-		TestName:        "BasicSecurityRegression",
-		TestrailCaseIDs: []string{"C53416", "C53417", "C53423", "C60182", "C60183"},
-		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "security-regression-test"},
-		}),
-		TestFunc: BasicSecurityRegression,
-	},
-	{
-		TestName:        "BasicKvdbRegression",
-		TestrailCaseIDs: []string{"C52665", "C52667", "C52670", "C50237", "C53582", "C53583", "C53586", "C57011"},
-		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "kvdb-regression-test"},
-		}),
-		TestFunc: BasicKvdbRegression,
-	},
-	{
-		TestName:        "InstallWithNodeTopologyLabels",
-		TestrailCaseIDs: []string{"C59259", "C59260", "C59261"},
-		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "pod-topology-spread-constraints-test",
-				Annotations: map[string]string{
-					"portworx.io/pvc-controller": "true",
-				},
-			},
-		}),
-		TestFunc: InstallWithNodeTopologyLabels,
 		ShouldSkip: func(tc *types.TestCase) bool {
 			return ci_utils.PxOperatorVersion.LessThan(ci_utils.PxOperatorVer1_8)
 		},
@@ -400,7 +400,7 @@ func BasicUpgradeStorageCluster(tc *types.TestCase) func(*testing.T) {
 		}
 
 		// Delete and validate the deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -459,7 +459,7 @@ func BasicUpgradeOperator(tc *types.TestCase) func(*testing.T) {
 		}
 
 		// Delete and validate the deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -540,8 +540,6 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 		logrus.Info("Delete portworx pods and validate they get re-deployed")
 		err = coreops.Instance().DeletePodsByLabels(cluster.Namespace, map[string]string{"name": "portworx"}, 120*time.Second)
 		require.NoError(t, err)
-		err = testutil.ValidateStorageCluster(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateDeployTimeout, ci_utils.DefaultValidateDeployRetryInterval, true, "")
-		require.NoError(t, err)
 
 		logrus.Info("Disable CSI and validate StorageCluster")
 		updateParamFunc := func(cluster *corev1.StorageCluster) *corev1.StorageCluster {
@@ -593,7 +591,7 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 		}
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -695,7 +693,7 @@ func BasicStorkRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, cluster.Spec.Stork.Enabled, "failed to validate Stork is enabled: expected: true, actual: %v", cluster.Spec.Stork.Enabled)
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -748,7 +746,7 @@ func BasicAutopilotRegression(tc *types.TestCase) func(*testing.T) {
 		require.Nil(t, cluster.Spec.Autopilot, "failed to validate Autopilot block, it should be nil here, but it is not: %+v", cluster.Spec.Autopilot)
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -818,7 +816,7 @@ func BasicPvcControllerRegression(tc *types.TestCase) func(*testing.T) {
 		require.Empty(t, cluster.Annotations["portworx.io/pvc-controller"], "failed to validate portworx.io/pvc-controller annotation, it shouldn't be here, because it was deleted")
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -944,7 +942,7 @@ func BasicAlertManagerRegression(tc *types.TestCase) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 

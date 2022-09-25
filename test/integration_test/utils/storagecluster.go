@@ -10,7 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
+	"k8s.io/apimachinery/pkg/api/errors"
+	
 	"github.com/libopenstorage/operator/drivers/storage/portworx"
 	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
@@ -158,8 +159,14 @@ func DeployAndValidateStorageCluster(cluster *corev1.StorageCluster, pxSpecImage
 	k8sVersion, _ := version.NewVersion(K8sVersion)
 	portworx.SetPortworxDefaults(cluster, k8sVersion)
 	// Deploy cluster
-	cluster, err := CreateStorageCluster(cluster)
-	require.NoError(t, err)
+	_, err := operator.Instance().GetStorageCluster(cluster.Name, cluster.Namespace);
+	require.True(t, err == nil || errors.IsNotFound(err))
+	if err == nil {
+		cluster, err = operator.Instance().UpdateStorageCluster(cluster)
+	} else {
+		cluster, err = CreateStorageCluster(cluster)
+		require.NoError(t, err)
+	}
 
 	// Validate cluster deployment
 	logrus.Infof("Validate StorageCluster %s", cluster.Name)
