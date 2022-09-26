@@ -51,33 +51,6 @@ var testStorageClusterBasicCases = []types.TestCase{
 		TestFunc: BasicInstallInCustomNamespace,
 	},
 	{
-		TestName:        "BasicInstall",
-		TestrailCaseIDs: []string{"C50962", "C51022", "C50236"},
-		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
-			Spec: corev1.StorageClusterSpec{
-				Placement: &corev1.PlacementSpec{
-					NodeAffinity: &v1.NodeAffinity{
-						RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
-							NodeSelectorTerms: []v1.NodeSelectorTerm{
-								{
-									MatchExpressions: []v1.NodeSelectorRequirement{
-										{
-											Key:      labelKeySkipPX,
-											Operator: v1.NodeSelectorOpNotIn,
-											Values:   []string{ci_utils.LabelValueTrue},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}),
-		TestFunc: BasicInstallWithNodeAffinity,
-	},
-	{
 		TestName:        "BasicUpgradeStorageCluster",
 		TestrailCaseIDs: []string{"C50241"},
 		TestSpec: func(t *testing.T) interface{} {
@@ -132,6 +105,33 @@ var testStorageClusterBasicCases = []types.TestCase{
 			return ci_utils.PxOperatorVersion.LessThan(ci_utils.PxOperatorVer1_7)
 		},
 		TestFunc: BasicUpgradeOperator,
+	},
+	{
+		TestName:        "BasicInstall",
+		TestrailCaseIDs: []string{"C50962", "C51022", "C50236"},
+		TestSpec: ci_utils.CreateStorageClusterTestSpecFunc(&corev1.StorageCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-stc"},
+			Spec: corev1.StorageClusterSpec{
+				Placement: &corev1.PlacementSpec{
+					NodeAffinity: &v1.NodeAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+							NodeSelectorTerms: []v1.NodeSelectorTerm{
+								{
+									MatchExpressions: []v1.NodeSelectorRequirement{
+										{
+											Key:      labelKeySkipPX,
+											Operator: v1.NodeSelectorOpNotIn,
+											Values:   []string{ci_utils.LabelValueTrue},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}),
+		TestFunc: BasicInstallWithNodeAffinity,
 	},
 	{
 		TestName:        "BasicTelemetryRegression",
@@ -255,7 +255,7 @@ func BasicInstall(tc *types.TestCase) func(*testing.T) {
 		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Wipe PX and validate
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -476,7 +476,7 @@ func BasicTelemetryRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		// cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Validate Telemetry is not enabled by default
 		logrus.Info("Validate Telemetry is not enabled by default")
@@ -511,7 +511,7 @@ func BasicTelemetryRegression(tc *types.TestCase) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Delete and validate the deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -531,7 +531,7 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create and validate StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Validate CSI is enabled by default
 		require.Equal(t, cluster.Spec.CSI.Enabled, true)
@@ -591,7 +591,7 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 		}
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -618,7 +618,7 @@ func BasicStorkRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create and validate StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Validate Stork is enabled by default
 		require.True(t, cluster.Spec.Stork.Enabled, "failed to validate Stork is enabled by default, it should be enabled, but it is set to %v", cluster.Spec.Stork.Enabled)
@@ -693,7 +693,7 @@ func BasicStorkRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, cluster.Spec.Stork.Enabled, "failed to validate Stork is enabled: expected: true, actual: %v", cluster.Spec.Stork.Enabled)
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -711,7 +711,7 @@ func BasicAutopilotRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create and validate StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Validate Autopilot block is nil
 		require.Nil(t, cluster.Spec.Autopilot, "failed to validate Autopilot block, it should be nil by default, but it seems there is something set in there %+v", cluster.Spec.Autopilot)
@@ -746,7 +746,7 @@ func BasicAutopilotRegression(tc *types.TestCase) func(*testing.T) {
 		require.Nil(t, cluster.Spec.Autopilot, "failed to validate Autopilot block, it should be nil here, but it is not: %+v", cluster.Spec.Autopilot)
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		// ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -767,7 +767,7 @@ func BasicPvcControllerRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create and validate StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		require.Empty(t, cluster.Annotations["portworx.io/pvc-controller"], "failed to validate portworx.io/pvc-controller annotation, it shouldn't exist by default, but it is and has value of %s", cluster.Annotations["portworx.io/pvc-controller"])
 
@@ -816,7 +816,7 @@ func BasicPvcControllerRegression(tc *types.TestCase) func(*testing.T) {
 		require.Empty(t, cluster.Annotations["portworx.io/pvc-controller"], "failed to validate portworx.io/pvc-controller annotation, it shouldn't be here, because it was deleted")
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -877,7 +877,7 @@ func BasicAlertManagerRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create and validate StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Validate AlertManager is not enabled by default
 		logrus.Info("Validate ALertManager is not enabled by default")
@@ -942,7 +942,7 @@ func BasicAlertManagerRegression(tc *types.TestCase) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -959,7 +959,7 @@ func BasicSecurityRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create and validate StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Validate Security is not enabled by default
 		logrus.Info("Validate Security is not enabled by default")
@@ -1008,7 +1008,7 @@ func BasicKvdbRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create and validate StorageCluster
-		cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 
 		// Delete all KVDB pods and validate the get re-created
 		logrus.Info("Delete portworx KVDB pods and validate they get re-deployed")
@@ -1018,7 +1018,7 @@ func BasicKvdbRegression(tc *types.TestCase) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Delete and validate StorageCluster deletion
-		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
