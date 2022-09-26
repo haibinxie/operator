@@ -479,7 +479,7 @@ func BasicTelemetryRegression(tc *types.TestCase) func(*testing.T) {
 		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
 		cluster, err = operator.Instance().GetStorageCluster(cluster.Name, cluster.Namespace)
 		require.Nil(t, err)
-		
+
 		// Validate Telemetry is not enabled by default
 		logrus.Info("Validate Telemetry is not enabled by default")
 		if cluster.Spec.Monitoring != nil {
@@ -544,7 +544,9 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 		logrus.Info("Delete portworx pods and validate they get re-deployed")
 		err = coreops.Instance().DeletePodsByLabels(cluster.Namespace, map[string]string{"name": "portworx"}, 120*time.Second)
 		require.NoError(t, err)
-
+		err = testutil.ValidateStorageCluster(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateDeployTimeout, ci_utils.DefaultValidateDeployRetryInterval, true, "")
+		require.NoError(t, err)
+		
 		logrus.Info("Disable CSI and validate StorageCluster")
 		updateParamFunc := func(cluster *corev1.StorageCluster) *corev1.StorageCluster {
 			cluster.Spec.CSI.Enabled = false
