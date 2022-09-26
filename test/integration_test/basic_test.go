@@ -476,8 +476,10 @@ func BasicTelemetryRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, ok)
 
 		// Create StorageCluster
-		// cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
-
+		//cluster = ci_utils.DeployAndValidateStorageCluster(cluster, ci_utils.PxSpecImages, t)
+		cluster, err = operator.Instance().GetStorageCluster(cluster.Name, cluster.Namespace)
+		require.Nil(t, err)
+		
 		// Validate Telemetry is not enabled by default
 		logrus.Info("Validate Telemetry is not enabled by default")
 		if cluster.Spec.Monitoring != nil {
