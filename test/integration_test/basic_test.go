@@ -400,7 +400,7 @@ func BasicUpgradeStorageCluster(tc *types.TestCase) func(*testing.T) {
 		}
 
 		// Delete and validate the deletion
-		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -459,7 +459,7 @@ func BasicUpgradeOperator(tc *types.TestCase) func(*testing.T) {
 		}
 
 		// Delete and validate the deletion
-		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -591,7 +591,7 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 		}
 
 		// Delete and validate StorageCluster deletion
-		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -693,7 +693,7 @@ func BasicStorkRegression(tc *types.TestCase) func(*testing.T) {
 		require.True(t, cluster.Spec.Stork.Enabled, "failed to validate Stork is enabled: expected: true, actual: %v", cluster.Spec.Stork.Enabled)
 
 		// Delete and validate StorageCluster deletion
-		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -746,7 +746,7 @@ func BasicAutopilotRegression(tc *types.TestCase) func(*testing.T) {
 		require.Nil(t, cluster.Spec.Autopilot, "failed to validate Autopilot block, it should be nil here, but it is not: %+v", cluster.Spec.Autopilot)
 
 		// Delete and validate StorageCluster deletion
-		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -816,7 +816,7 @@ func BasicPvcControllerRegression(tc *types.TestCase) func(*testing.T) {
 		require.Empty(t, cluster.Annotations["portworx.io/pvc-controller"], "failed to validate portworx.io/pvc-controller annotation, it shouldn't be here, because it was deleted")
 
 		// Delete and validate StorageCluster deletion
-		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
@@ -942,7 +942,7 @@ func BasicAlertManagerRegression(tc *types.TestCase) func(*testing.T) {
 		require.NoError(t, err)
 
 		// Delete and validate StorageCluster deletion
-		//ci_utils.UninstallAndValidateStorageCluster(cluster, t)
+		ci_utils.UninstallAndValidateStorageCluster(cluster, t)
 	}
 }
 
