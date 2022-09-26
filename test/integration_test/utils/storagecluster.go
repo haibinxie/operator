@@ -185,12 +185,12 @@ func DeployAndValidateStorageCluster(cluster *corev1.StorageCluster, pxSpecImage
 func UpdateStorageCluster(cluster *corev1.StorageCluster) (*corev1.StorageCluster, error) {
 	logrus.Infof("Update StorageCluster %s in %s", cluster.Name, cluster.Namespace)
 
-	cluster, err := operator.Instance().UpdateStorageCluster(cluster)
+	newCluster, err := operator.Instance().UpdateStorageCluster(cluster)
 	if err != nil {
 		return nil, err
 	}
 
-	return cluster, nil
+	return newCluster, nil
 }
 
 // UpdateAndValidateStorageCluster update, validate and return new StorageCluster

@@ -546,7 +546,7 @@ func BasicCsiRegression(tc *types.TestCase) func(*testing.T) {
 		require.NoError(t, err)
 		err = testutil.ValidateStorageCluster(ci_utils.PxSpecImages, cluster, ci_utils.DefaultValidateDeployTimeout, ci_utils.DefaultValidateDeployRetryInterval, true, "")
 		require.NoError(t, err)
-		
+
 		logrus.Info("Disable CSI and validate StorageCluster")
 		updateParamFunc := func(cluster *corev1.StorageCluster) *corev1.StorageCluster {
 			cluster.Spec.CSI.Enabled = false
@@ -938,8 +938,14 @@ func BasicAlertManagerRegression(tc *types.TestCase) func(*testing.T) {
 		// Enable AlertManager with Prometheus and validate it gets deployed
 		logrus.Info("Enable AlertManager with Prometheus and validate it gets deployed")
 		updateParamFunc = func(cluster *corev1.StorageCluster) *corev1.StorageCluster {
-			cluster.Spec.Monitoring.Prometheus.Enabled = true
-			cluster.Spec.Monitoring.Prometheus.AlertManager.Enabled = true
+			cluster.Spec.Monitoring = &corev1.MonitoringSpec{
+				Prometheus: &corev1.PrometheusSpec{
+					AlertManager: &corev1.AlertManagerSpec{
+						Enabled: true,
+					},
+					Enabled: true,
+				},
+			}
 			return cluster
 		}
 		cluster = ci_utils.UpdateAndValidateMonitoring(cluster, updateParamFunc, ci_utils.PxSpecImages, t)
