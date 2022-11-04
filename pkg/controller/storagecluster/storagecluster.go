@@ -1134,7 +1134,20 @@ func (c *Controller) CreatePodTemplate(
 	if len(hash) > 0 {
 		newTemplate.Labels[defaultStorageClusterUniqueLabelKey] = hash
 	}
-	return newTemplate, nil
+
+	pod := &v1.Pod{
+		ObjectMeta: newTemplate.ObjectMeta,
+		Spec:       newTemplate.Spec,
+	}
+	obj := client.Object(pod)
+	err = util.GetAndApplyGenericConfig(c.client, &obj)
+	if err != nil {
+		logrus.WithError(err).Warningf("failed to apply generic config to portworx pod")
+		// Let's not fail portworx installation if generic config could not be applied.
+		return newTemplate, nil
+	}
+
+	return v1.PodTemplateSpec{ObjectMeta: pod.ObjectMeta, Spec: pod.Spec}, nil
 }
 func (c *Controller) getCurrentMaxStorageNodesPerZone(
 	cluster *corev1.StorageCluster,

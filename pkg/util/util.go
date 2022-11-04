@@ -1,8 +1,11 @@
 package util
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"path"
 	"reflect"
 	"sort"
@@ -10,13 +13,23 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-version"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 	"github.com/libopenstorage/operator/pkg/constants"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/sirupsen/logrus"
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	apiyaml "k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
 
 // Reasons for controller events
@@ -447,4 +460,197 @@ func GetTopologySpreadConstraintsFromNodes(
 		})
 	}
 	return constraints, nil
+}
+
+// ParseSpecsFromString parses objects from a string, objects are separated by "---"
+func ParseSpecsFromString(str string) ([]runtime.Object, error) {
+	var specs []runtime.Object
+	reader := bufio.NewReader(strings.NewReader(str))
+	specReader := apiyaml.NewYAMLReader(reader)
+
+	for {
+		specContents, err := specReader.Read()
+		if err == io.EOF {
+			break
+		}
+
+		if len(bytes.TrimSpace(specContents)) > 0 {
+			obj, err := decodeSpec(specContents)
+			if err != nil {
+				logrus.Warnf("Error decoding spec: %v", err)
+				return nil, err
+			}
+
+			specObj, err := validateSpec(obj)
+			if err != nil {
+				logrus.Warnf("Error parsing spec: %v", err)
+				return nil, err
+			}
+
+			specs = append(specs, specObj)
+		}
+	}
+	return specs, nil
+}
+
+func decodeSpec(specContents []byte) (runtime.Object, error) {
+	obj, _, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(specContents), nil, nil)
+	if err != nil {
+		scheme := runtime.NewScheme()
+		if err := apiextensionsv1.AddToScheme(scheme); err != nil {
+			return nil, err
+		}
+		if err := monitoringv1.AddToScheme(scheme); err != nil {
+			return nil, err
+		}
+		if err := corev1.AddToScheme(scheme); err != nil {
+			return nil, err
+		}
+		codecs := serializer.NewCodecFactory(scheme)
+		obj, _, err = codecs.UniversalDeserializer().Decode([]byte(specContents), nil, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return obj, nil
+}
+
+func validateSpec(in interface{}) (runtime.Object, error) {
+	if specObj, ok := in.(*v1.Namespace); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*v1.Pod); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*appsv1.DaemonSet); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*appsv1.Deployment); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*v1.Service); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*v1.ConfigMap); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*v1.Secret); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*v1.ServiceAccount); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*rbacv1.Role); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*rbacv1.RoleBinding); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*rbacv1.ClusterRole); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*rbacv1.ClusterRoleBinding); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*apiextensionsv1.CustomResourceDefinition); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*storagev1.StorageClass); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*monitoringv1.ServiceMonitor); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*monitoringv1.PrometheusRule); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*monitoringv1.Prometheus); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*monitoringv1.Alertmanager); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*v1.PersistentVolumeClaim); ok {
+		return specObj, nil
+	} else if specObj, ok := in.(*corev1.StorageCluster); ok {
+		return specObj, nil
+	}
+	return nil, fmt.Errorf("unsupported object: %v", reflect.TypeOf(in))
+}
+
+func objectMatch(genericObj, targetObj client.Object) (bool, error) {
+	if genericObj == nil || targetObj == nil {
+		return false, fmt.Errorf("nil object")
+	}
+	if genericObj.GetObjectKind().GroupVersionKind().Kind != targetObj.GetObjectKind().GroupVersionKind().Kind {
+		return false, nil
+	}
+
+	if genericObj.GetName() != "" {
+		return genericObj.GetName() == targetObj.GetName(), nil
+	}
+
+	genericLabels := genericObj.GetLabels()
+	if len(genericLabels) == 0 {
+		return false, fmt.Errorf("generic config object should have name or labels: %v", genericObj)
+	}
+
+	objLabels := targetObj.GetLabels()
+	if objLabels == nil {
+		return false, nil
+	}
+
+	// If any generic label does not match, return false
+	for k, v := range genericLabels {
+		v2, ok := objLabels[k]
+		if !ok || v != v2 {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+// GetAndApplyGenericConfig gets generic config from configMaps and applies to a given object
+func GetAndApplyGenericConfig(k8sClient client.Client, obj *client.Object) error {
+	cmList := &v1.ConfigMapList{}
+	// list across all namespaces.
+	if err := k8sClient.List(context.TODO(), cmList, &client.ListOptions{}); err != nil {
+		return err
+	}
+
+	// Parse generic config objects
+	for _, cm := range cmList.Items {
+		if strings.HasPrefix(strings.ToLower(cm.Name), "genericconfig-") {
+			for _, val := range cm.Data {
+				err := ApplyGenericConfig(val, obj)
+				if err != nil {
+					logrus.WithError(err).Warningf("failed to apply generic config from configMap %s", cm.GetName())
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// ApplyGenericConfig applies generic config to a given object
+func ApplyGenericConfig(genericConfig string, obj *client.Object) error {
+	genericObjs, err := ParseSpecsFromString(genericConfig)
+	if err != nil {
+		return err
+	}
+
+	// For each generic config object, apply to the object if it matches the object name or
+	// object label selector
+	objKind := (*obj).GetObjectKind().GroupVersionKind().Kind
+	for _, tmpObj := range genericObjs {
+		genericObj := tmpObj.(client.Object)
+		match, err := objectMatch(genericObj, (*obj))
+		if err != nil {
+			// log error and continue with other objects
+			logrus.Errorf("failed to compare object: %v", err)
+			continue
+		}
+
+		if match {
+			logrus.Errorf("update object %s/%s with generic config.", objKind, (*obj).GetName())
+			b, err := yaml.Marshal(genericObj)
+			if err != nil {
+				logrus.WithError(err).Errorf("failed to marshal generic obj")
+				return err
+			}
+
+			err = yaml.Unmarshal(b, *obj)
+			if err != nil {
+				logrus.WithError(err).Errorf("failed to unmarshal generic obj")
+				return err
+			}
+		}
+	}
+
+	return nil
 }
