@@ -1,18 +1,13 @@
 package utils
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"os"
+	"io/ioutil"
 	"path"
 	"reflect"
 	"time"
 
-	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
-	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 	apiextensionsops "github.com/portworx/sched-ops/k8s/apiextensions"
 	appops "github.com/portworx/sched-ops/k8s/apps"
 	coreops "github.com/portworx/sched-ops/k8s/core"
@@ -21,7 +16,6 @@ import (
 	storageops "github.com/portworx/sched-ops/k8s/storage"
 	"github.com/portworx/sched-ops/task"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -30,11 +24,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	oputil "github.com/libopenstorage/operator/pkg/util"
+	k8sutil "github.com/libopenstorage/operator/pkg/util/k8s"
 )
 
 // ParseSpecs parses the file under testspec folder and returns all the valid k8s objects
@@ -44,39 +39,12 @@ func ParseSpecs(filename string) ([]runtime.Object, error) {
 
 // ParseSpecsWithFullPath parses the file and returns all the valid k8s objects
 func ParseSpecsWithFullPath(filename string) ([]runtime.Object, error) {
-	var specs []runtime.Object
-	file, err := os.Open(filename)
+	b, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
-	reader := bufio.NewReader(file)
-	specReader := yaml.NewYAMLReader(reader)
-
-	for {
-		specContents, err := specReader.Read()
-		if err == io.EOF {
-			break
-		}
-
-		if len(bytes.TrimSpace(specContents)) > 0 {
-			obj, err := decodeSpec(specContents)
-			if err != nil {
-				logrus.Warnf("Error decoding spec from %v: %v", filename, err)
-				return nil, err
-			}
-
-			specObj, err := validateSpec(obj)
-			if err != nil {
-				logrus.Warnf("Error parsing spec from %v: %v", filename, err)
-				return nil, err
-			}
-
-			specs = append(specs, specObj)
-		}
-	}
-	return specs, nil
+	return oputil.ParseSpecsFromString(string(b))
 }
 
 // CreateObjects creates the given k8s objects
@@ -281,62 +249,4 @@ func validateObjectIsTerminated(
 		return err
 	}
 	return nil
-}
-
-func decodeSpec(specContents []byte) (runtime.Object, error) {
-	obj, _, err := scheme.Codecs.UniversalDeserializer().Decode([]byte(specContents), nil, nil)
-	if err != nil {
-		scheme := runtime.NewScheme()
-		apiextensionsv1.AddToScheme(scheme)
-		monitoringv1.AddToScheme(scheme)
-		codecs := serializer.NewCodecFactory(scheme)
-		obj, _, err = codecs.UniversalDeserializer().Decode([]byte(specContents), nil, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return obj, nil
-}
-
-func validateSpec(in interface{}) (runtime.Object, error) {
-	if specObj, ok := in.(*v1.Namespace); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*appsv1.DaemonSet); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*appsv1.Deployment); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*v1.Service); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*v1.ConfigMap); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*v1.Secret); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*v1.ServiceAccount); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*rbacv1.Role); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*rbacv1.RoleBinding); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*rbacv1.ClusterRole); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*rbacv1.ClusterRoleBinding); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*apiextensionsv1.CustomResourceDefinition); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*storagev1.StorageClass); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*monitoringv1.ServiceMonitor); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*monitoringv1.PrometheusRule); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*monitoringv1.Prometheus); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*monitoringv1.Alertmanager); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*v1.PersistentVolumeClaim); ok {
-		return specObj, nil
-	} else if specObj, ok := in.(*corev1.StorageCluster); ok {
-		return specObj, nil
-	}
-	return nil, fmt.Errorf("unsupported object: %v", reflect.TypeOf(in))
 }
