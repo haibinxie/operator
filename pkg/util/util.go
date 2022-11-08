@@ -13,8 +13,6 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-version"
-	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
-	"github.com/libopenstorage/operator/pkg/constants"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,6 +28,9 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
+	"github.com/libopenstorage/operator/pkg/constants"
 )
 
 // Reasons for controller events
@@ -568,8 +569,18 @@ func objectMatch(genericObj, targetObj client.Object) (bool, error) {
 		return false, nil
 	}
 
+	// Only compare name if it's not empty, otherwise compare labels.
 	if genericObj.GetName() != "" {
-		return genericObj.GetName() == targetObj.GetName(), nil
+		ns1 := genericObj.GetNamespace()
+		ns2 := targetObj.GetNamespace()
+		if ns1 == "" {
+			ns1 = "default"
+		}
+		if ns2 == "" {
+			ns2 = "default"
+		}
+
+		return genericObj.GetName() == targetObj.GetName() && ns1 == ns2, nil
 	}
 
 	genericLabels := genericObj.GetLabels()
@@ -637,7 +648,7 @@ func ApplyGenericConfig(genericConfig string, obj *client.Object) error {
 		}
 
 		if match {
-			logrus.Errorf("update object %s/%s with generic config.", objKind, (*obj).GetName())
+			logrus.Debugf("update object %s/%s with generic config.", objKind, (*obj).GetName())
 			b, err := yaml.Marshal(genericObj)
 			if err != nil {
 				logrus.WithError(err).Errorf("failed to marshal generic obj")

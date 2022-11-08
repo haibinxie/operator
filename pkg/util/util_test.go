@@ -17,6 +17,9 @@ import (
 	corev1 "github.com/libopenstorage/operator/pkg/apis/core/v1"
 	"github.com/libopenstorage/operator/pkg/constants"
 	"github.com/libopenstorage/operator/pkg/util/k8s"
+	"k8s.io/apimachinery/pkg/util/json"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestImageURN(t *testing.T) {
@@ -436,4 +439,69 @@ func fakeK8sClient(initObjects ...runtime.Object) client.Client {
 		logrus.Error(err)
 	}
 	return fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(initObjects...).Build()
+}
+
+func TestApplyGenericConfig(t *testing.T) {
+	pod := &v1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "TestPod",
+			Namespace: "TestNamespace",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:  "TestContainer1",
+					Image: "TestContainerImage1",
+					Resources: v1.ResourceRequirements{
+						Requests: map[v1.ResourceName]resource.Quantity{
+							v1.ResourceMemory: resource.MustParse("4Gi"),
+							v1.ResourceCPU:    resource.MustParse("4")},
+					},
+				},
+			},
+		},
+	}
+
+	genericConfigPod := &v1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "TestPod",
+			Namespace: "TestNamespace",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: map[v1.ResourceName]resource.Quantity{
+							v1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	b, err := json.Marshal(genericConfigPod)
+	require.NoError(t, err)
+
+	expectedMem := resource.MustParse("4Gi")
+	expectedCPU := resource.MustParse("4")
+
+	require.Zero(t, expectedMem.Cmp(pod.Spec.Containers[0].Resources.Requests[v1.ResourceMemory]))
+	require.Zero(t, expectedCPU.Cmp(pod.Spec.Containers[0].Resources.Requests[v1.ResourceCPU]))
+
+	clientObj := client.Object(pod)
+	err = ApplyGenericConfig(string(b), &clientObj)
+	require.NoError(t, err)
+
+	expectedMem = resource.MustParse("2Gi")
+	require.Zero(t, expectedMem.Cmp(pod.Spec.Containers[0].Resources.Requests[v1.ResourceMemory]))
+	require.Zero(t, expectedCPU.Cmp(pod.Spec.Containers[0].Resources.Requests[v1.ResourceCPU]))
 }
