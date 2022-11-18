@@ -77,6 +77,16 @@ spec:
                       cpu:
                         type: string
                         description: Requested cpu for the storage pod.
+                  limits:
+                    type: object
+                    description: Resource limit for the storage pod.
+                    properties:
+                      memory:
+                        type: string
+                        description: Memory limit for the storage pod.
+                      cpu:
+                        type: string
+                        description: CPU limit for the storage pod.
               image:
                 type: string
                 description: Docker image of the storage driver.
@@ -332,6 +342,30 @@ spec:
                     description: Authentication secret is the name of Kubernetes secret containing
                       information to authenticate with the external KVDB. It could have the username/password
                       for basic auth, certificate information or an ACL token.
+                  resources:
+                    type: object
+                    description: Specifies the compute resource requirements for the kvdb pod.
+                    properties:
+                      requests:
+                        type: object
+                        description: Requested resources for the kvdb pod.
+                        properties:
+                          memory:
+                            type: string
+                            description: Requested memory for the kvdb pod.
+                          cpu:
+                            type: string
+                            description: Requested cpu for the kvdb pod.
+                      limits:
+                        type: object
+                        description: Resource limit for the kvdb pod.
+                        properties:
+                          memory:
+                            type: string
+                            description: Memory limit for the kvdb pod.
+                          cpu:
+                            type: string
+                            description: CPU limit for the kvdb pod.
               storage:
                 type: object
                 description: Details of the storage used by the storage driver.

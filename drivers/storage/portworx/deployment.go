@@ -197,7 +197,7 @@ func (p *portworx) GetKVDBPodSpec(
 		return v1.PodSpec{}, err
 	}
 
-	containers := t.kvdbContainer()
+	containers := t.kvdbContainer(cluster)
 	podSpec := v1.PodSpec{
 		HostNetwork:        true,
 		RestartPolicy:      v1.RestartPolicyAlways,
@@ -507,13 +507,13 @@ func (t *template) portworxContainer(cluster *corev1.StorageCluster) v1.Containe
 	return container
 }
 
-func (t *template) kvdbContainer() v1.Container {
+func (t *template) kvdbContainer(cluster *corev1.StorageCluster) v1.Container {
 	kvdbProxyImage := util.GetImageURN(t.cluster, pxutil.ImageNamePause)
 	kvdbTargetPort := 9019
 	if t.startPort != pxutil.DefaultStartPort {
 		kvdbTargetPort = t.startPort + 15
 	}
-	return v1.Container{
+	c := v1.Container{
 		Name:            pxKVDBContainerName,
 		Image:           kvdbProxyImage,
 		ImagePullPolicy: t.imagePullPolicy,
@@ -537,6 +537,12 @@ func (t *template) kvdbContainer() v1.Container {
 			},
 		},
 	}
+
+	if cluster.Spec.Resources != nil {
+		c.Resources = *cluster.Spec.Resources
+	}
+
+	return c
 }
 
 func (t *template) csiRegistrarContainer() *v1.Container {

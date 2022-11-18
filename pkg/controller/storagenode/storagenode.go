@@ -3,6 +3,7 @@ package storagenode
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -280,27 +281,46 @@ func (c *Controller) syncKVDB(
 			isRecentlyCreatedAfterNodeCordoned = k8s.IsPodRecentlyCreatedAfterNodeCordoned(node, c.nodeInfoMap, cluster)
 		}
 
-		if !isBeingDeleted && !isRecentlyCreatedAfterNodeCordoned && len(kvdbPods) == 0 {
+		if !isBeingDeleted && !isRecentlyCreatedAfterNodeCordoned {
 			pod, err := c.createKVDBPod(cluster, storageNode)
 			if err != nil {
 				return err
 			}
 
-			c.log(storageNode).Infof("creating kvdb pod: %s/%s", pod.Namespace, pod.Name)
-			_, err = coreops.Instance().CreatePod(pod)
-			if err != nil {
-				return err
-			}
-
-			nodeInfo, ok := c.nodeInfoMap[storageNode.Name]
-			if ok {
-				nodeInfo.LastPodCreationTime = time.Now()
-			} else {
-				c.nodeInfoMap[storageNode.Name] = &k8s.NodeInfo{
-					NodeName:             storageNode.Name,
-					LastPodCreationTime:  time.Now(),
-					CordonedRestartDelay: constants.DefaultCordonedRestartDelay,
+			if len(kvdbPods) == 0 {
+				c.log(storageNode).Infof("creating kvdb pod: %s/%s", pod.Namespace, pod.Name)
+				_, err = coreops.Instance().CreatePod(pod)
+				if err != nil {
+					return err
 				}
+
+				nodeInfo, ok := c.nodeInfoMap[storageNode.Name]
+				if ok {
+					nodeInfo.LastPodCreationTime = time.Now()
+				} else {
+					c.nodeInfoMap[storageNode.Name] = &k8s.NodeInfo{
+						NodeName:             storageNode.Name,
+						LastPodCreationTime:  time.Now(),
+						CordonedRestartDelay: constants.DefaultCordonedRestartDelay,
+					}
+				}
+			} else if len(kvdbPods) == 1 {
+				// The KVDB pod exists, let's see if we need to update it. We only update when resources change.
+				if !reflect.DeepEqual(kvdbPods[0].Spec.Containers[0].Resources, pod.Spec.Containers[0].Resources) {
+					pod, err = coreops.Instance().UpdatePod(pod)
+					if err != nil {
+						return err
+					}
+
+					// wait for the pod to be ready, so that we don't update next pod immediately.
+					// This is important to ensure quorum.
+					err = coreops.Instance().ValidatePod(pod, 5*time.Minute, time.Second)
+					if err != nil {
+						return err
+					}
+				}
+			} else {
+				logrus.Warningf("Multiple kvdb pods found on one node: %+v", kvdbPods)
 			}
 		}
 	} else { // delete pods if present

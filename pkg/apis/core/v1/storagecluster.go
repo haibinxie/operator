@@ -346,6 +346,8 @@ type KvdbSpec struct {
 	// to authenticate with the kvdb. It could have the username/password
 	// for basic auth, certificate information or ACL token.
 	AuthSecret string `json:"authSecret,omitempty"`
+	// Resource requirements for kvdb pods, e.g. CPU and memory requests or limits
+	Resources *v1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // NetworkSpec contains network information
